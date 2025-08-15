@@ -30,9 +30,9 @@ function atualizarOverlay(texto) {
     if (overlay) overlay.innerText = texto;
 }
 
-// Delay aleatório entre 90 e 120 segundos
+// Delay aleatório entre 120 e 180 segundos
 function getRandomDelay() {
-    return 90000 + Math.random() * 30000;
+    return 120000 + Math.random() * 60000; 
 }
 
 // Countdown em tempo real
@@ -130,7 +130,7 @@ function iniciar(limiteParam) {
     if (rodando) return;
     rodando = true;
     perfisSeguidos = 0;
-    limite = limiteParam || 10;
+    limite = Math.min(limiteParam || 10, 200); // garante até 200
     criarOverlay();
     seguirProximoUsuario();
 }
