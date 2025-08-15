@@ -1,10 +1,9 @@
 document.getElementById('startBtn').addEventListener('click', () => {
-    let limite = parseInt(document.getElementById('quantidade').value) || 10;
-    if (limite > 200) limite = 200;
-    if (limite < 1) limite = 1;
+    const limite = parseInt(document.getElementById('quantidade').value) || 10;
+    const curtirFoto = document.getElementById('curtirFoto').checked;
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'start', limite });
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'start', limite, curtirFoto });
     });
 });
 

@@ -1,10 +1,9 @@
-// contentScript.js
-
 let rodando = false;
 let perfisSeguidos = 0;
 let limite = 10;
 let overlay = null;
 let countdownInterval = null;
+let curtirFoto = true;
 
 // Cria overlay
 function criarOverlay() {
@@ -14,7 +13,7 @@ function criarOverlay() {
         overlay.style.position = "fixed";
         overlay.style.bottom = "20px";
         overlay.style.right = "20px";
-        overlay.style.backgroundColor = "rgba(0,0,0,0.7)";
+        overlay.style.backgroundColor = "rgba(0,0,0,0.8)";
         overlay.style.color = "white";
         overlay.style.padding = "10px";
         overlay.style.borderRadius = "5px";
@@ -32,7 +31,7 @@ function atualizarOverlay(texto) {
 
 // Delay aleatório entre 120 e 180 segundos
 function getRandomDelay() {
-    return 120000 + Math.random() * 60000; 
+    return 120000 + Math.random() * 60000;
 }
 
 // Countdown em tempo real
@@ -68,8 +67,27 @@ function encontrarModalInterno(modal) {
     return null;
 }
 
+// Função para curtir primeira foto
+async function curtirPrimeiraFoto() {
+    try {
+        const primeiroPost = document.querySelector('article a');
+        if (!primeiroPost) return false;
+
+        primeiroPost.click();
+        await new Promise(r => setTimeout(r, 1500));
+
+        const btnCurtir = document.querySelector('svg[aria-label="Curtir"]');
+        if (btnCurtir) btnCurtir.parentElement.click();
+
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // Função principal para seguir perfis
-function seguirProximoUsuario() {
+async function seguirProximoUsuario() {
     if (!rodando) return;
 
     const modal = document.querySelector('div[role="dialog"]');
@@ -86,7 +104,6 @@ function seguirProximoUsuario() {
         return;
     }
 
-    // Pega o primeiro botão "Seguir" visível
     const btn = Array.from(modalInterno.querySelectorAll('button'))
         .find(b => b.innerText.toLowerCase() === 'seguir' || b.innerText.toLowerCase() === 'follow');
 
@@ -95,10 +112,13 @@ function seguirProximoUsuario() {
         perfisSeguidos++;
         atualizarOverlay(`Seguindo... (${perfisSeguidos}/${limite})`);
 
-        // Scroll fixo menor para não pular perfis
+        if (curtirFoto) {
+            await new Promise(r => setTimeout(r, 1500));
+            await curtirPrimeiraFoto();
+        }
+
         modalInterno.scrollTop += 70;
     } else {
-        // Scroll para tentar carregar mais perfis
         const prevScroll = modalInterno.scrollTop;
         modalInterno.scrollTop += 50;
 
@@ -126,11 +146,12 @@ function seguirProximoUsuario() {
 }
 
 // Iniciar automação
-function iniciar(limiteParam) {
+function iniciar(limiteParam, curtir) {
     if (rodando) return;
     rodando = true;
     perfisSeguidos = 0;
-    limite = Math.min(limiteParam || 10, 200); // garante até 200
+    limite = limiteParam || 10;
+    curtirFoto = curtir !== undefined ? curtir : true;
     criarOverlay();
     seguirProximoUsuario();
 }
@@ -144,6 +165,6 @@ function parar() {
 
 // Recebe mensagens do popup
 chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === 'start') iniciar(msg.limite);
+    if (msg.action === 'start') iniciar(msg.limite, msg.curtirFoto);
     if (msg.action === 'stop') parar();
 });
