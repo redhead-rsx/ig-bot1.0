@@ -11,8 +11,6 @@ class Bot {
     this.maxDelay = 180000;
     this.likesOk = 0;
     this.likesSkip = 0;
-    this.paused = false;
-    this.remaining = 0;
   }
 
   criarOverlays() {
@@ -26,12 +24,12 @@ class Bot {
           right: 20px;
           background: rgba(0,0,0,0.8);
           color: #fff;
-          padding: 10px;
-          border-radius: 5px;
-          z-index: 99999;
-          font-family: Arial, sans-serif;
-          font-size: 14px;
+          padding: 10px 12px;
+          border-radius: 6px;
+          z-index: 999999;
+          font: 12px/1.4 Arial, sans-serif;
           white-space: pre-line;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.35);
         }
         #autoFollowLog {
           position: fixed;
@@ -39,45 +37,43 @@ class Bot {
           left: 20px;
           background: rgba(0,0,0,0.8);
           color: #fff;
-          padding: 10px;
-          border-radius: 5px;
-          z-index: 99999;
-          font-family: Arial, sans-serif;
-          font-size: 14px;
+          padding: 10px 12px;
+          border-radius: 6px;
+          z-index: 999999;
+          font: 12px/1.4 Arial, sans-serif;
           max-height: 60vh;
           overflow-y: auto;
           white-space: pre-line;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.35);
         }
       `;
       document.head.appendChild(style);
     }
-
     if (!this.overlay) {
       this.overlay = document.createElement('div');
       this.overlay.id = 'autoFollowOverlay';
+      this.overlay.textContent = 'Pronto.';
       document.body.appendChild(this.overlay);
     }
-
     if (!this.logOverlay) {
       this.logOverlay = document.createElement('div');
       this.logOverlay.id = 'autoFollowLog';
-      this.logOverlay.innerText = 'Perfis seguidos:\n';
+      this.logOverlay.textContent = 'Perfis seguidos:\n';
       document.body.appendChild(this.logOverlay);
     }
-
-    this.setStatus('Aguardando início...');
   }
 
-  setStatus(texto) {
-    if (this.overlay)
-      this.overlay.innerText = `${texto}\nSeguidos: ${this.perfisSeguidos}/${this.limite}\n♥️ ${this.likesOk} ⏭️ ${this.likesSkip}`;
+  atualizarOverlay(texto) {
+    if (!this.overlay) return;
+    const extra = `\nLikes: ${this.likesOk} ok / ${this.likesSkip} skip`;
+    this.overlay.textContent = `${texto}${extra}`;
   }
 
   addLog(username, badge = '') {
-    if (this.logOverlay) {
-      this.logOverlay.innerText += `@${username} ${badge}\n`;
-      this.logOverlay.scrollTop = this.logOverlay.scrollHeight;
-    }
+    if (!this.logOverlay) return;
+    const line = badge ? `@${username} ${badge}\n` : `@${username}\n`;
+    this.logOverlay.textContent += line;
+    this.logOverlay.scrollTop = this.logOverlay.scrollHeight;
   }
 
   getRandomDelay() {
@@ -87,28 +83,17 @@ class Bot {
   startCountdown(seconds) {
     clearInterval(this.countdownInterval);
     let remaining = seconds;
-    this.remaining = remaining;
-
     this.countdownInterval = setInterval(() => {
       if (!this.rodando) {
         clearInterval(this.countdownInterval);
         return;
       }
-
-      if (this.paused) {
-        this.setStatus(`Pausado (${remaining}s)`);
-        return;
-      }
-
-      this.setStatus(`Aguardando ${remaining}s...`);
-
+      this.atualizarOverlay(`Aguardando ${remaining}s... (${this.perfisSeguidos}/${this.limite})`);
       if (remaining <= 0) {
         clearInterval(this.countdownInterval);
         this.seguirProximoUsuario();
       }
-
       remaining--;
-      this.remaining = remaining;
     }, 1000);
   }
 
@@ -122,55 +107,44 @@ class Bot {
     return null;
   }
 
-  extrairUsername(btn) {
-// Substitua o bloco conflitado por esta função:
-async function extractUsernameFromFollowButton(btn) {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const bad = new Set(['p','reel','reels','explore','accounts','stories','direct','challenge','tv']);
-  const notInsideBtn = (el) => !btn.contains(el);
+  async extractUsernameFromFollowButton(btn) {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const bad = new Set(['p','reel','reels','explore','accounts','stories','direct','challenge','tv']);
+    const notInsideBtn = (el) => !btn.contains(el);
 
-  let current = btn;
-  for (let i = 0; i < 8 && current; i++) {
-    // 1) Tenta âncoras de perfil raiz fora do botão (ex.: "/usuario/")
-    const anchors = Array.from(
-      current.querySelectorAll('a[href^="/"][href$="/"]')
-    ).filter(notInsideBtn);
+    let current = btn;
+    for (let i = 0; i < 8 && current; i++) {
+      // 1) Anchors de perfil raiz fora do botão
+      const anchors = Array.from(current.querySelectorAll('a[href^="/"][href$="/"]')).filter(notInsideBtn);
+      for (const a of anchors) {
+        const href = a.getAttribute('href') || '';
+        const m = href.match(/^\/([^\/?#]+)\/$/);
+        if (!m) continue;
+        const seg = (m[1] || '').toLowerCase();
+        if (!bad.has(seg)) return m[1];
+      }
+      // 2) Spans/divs curtos fora do botão
+      const spanCandidate = Array.from(current.querySelectorAll('span[dir="auto"], div[dir="auto"]'))
+        .filter(notInsideBtn)
+        .map(s => (s.innerText || '').trim())
+        .find(t => t && !t.includes(' ') && !/^@?seguir$|^@?following$|^@?follow$/i.test(t));
+      if (spanCandidate) return spanCandidate.replace(/^@/, '');
 
-    for (const a of anchors) {
-      const href = a.getAttribute('href') || '';
-      const m = href.match(/^\/([^\/?#]+)\/$/);
-      if (!m) continue;
-      const seg = (m[1] || '').toLowerCase();
-      if (!bad.has(seg)) return m[1];
+      current = current.parentElement;
+      await sleep(10);
     }
-
-    // 2) Fallback: spans/divs com dir="auto" (fora do botão), sem espaços e não "seguir/following"
-    const spanCandidate = Array.from(
-      current.querySelectorAll('span[dir="auto"], div[dir="auto"]')
-    )
-      .filter(notInsideBtn)
-      .map(s => (s.innerText || '').trim())
-      .find(t => t && !t.includes(' ') && !/^@?seguir|^@?following|^@?follow$/i.test(t));
-
-    if (spanCandidate) return spanCandidate.replace(/^@/, '');
-
-    current = current.parentElement;
-    await sleep(10); // pequeno respiro pra DOM lazy
-  }
-
-  return 'desconhecido';
-}
-
-    }
-
     return 'desconhecido';
   }
 
   requestLike(username) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
-        resolve((resp && resp.result) || 'LIKE_SKIP');
-      });
+      try {
+        chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
+          resolve(resp && resp.result);
+        });
+      } catch (e) {
+        resolve('LIKE_SKIP');
+      }
     });
   }
 
@@ -179,53 +153,46 @@ async function extractUsernameFromFollowButton(btn) {
 
     const modal = document.querySelector('div[role="dialog"]');
     if (!modal) {
-      this.setStatus('Abra o modal de seguidores');
+      this.atualizarOverlay('Abra o modal de seguidores');
       setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
 
     const modalInterno = this.encontrarModalInterno(modal);
     if (!modalInterno) {
-      this.setStatus('Não encontrou a div interna scrollável');
+      this.atualizarOverlay('Não encontrou a div interna scrollável');
       setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
 
     const btn = Array.from(modalInterno.querySelectorAll('button')).find((b) => {
-      const t = b.innerText.trim().toLowerCase();
+      const t = (b.innerText || '').trim().toLowerCase();
       return t === 'seguir' || t === 'follow';
     });
 
     if (btn) {
-      const username = this.extrairUsername(btn);
+      const username = await this.extractUsernameFromFollowButton(btn);
       btn.click();
       this.perfisSeguidos++;
-      this.setStatus(`Seguindo @${username}`);
-      let badge = '';
+      this.addLog(username);
 
       if (this.curtirFoto) {
-        this.setStatus(`Curtindo primeira foto de @${username}...`);
+        this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
         const result = await this.requestLike(username);
-        if (result === 'LIKE_DONE') {
-          this.likesOk++;
-          badge = '♥️';
-        } else {
-          this.likesSkip++;
-          badge = '⏭️';
-        }
+        if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
+        else { this.likesSkip++; this.addLog(username, '⏭️'); }
+      } else {
+        this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
       }
 
-      this.addLog(username, badge);
-      this.setStatus(`Seguido @${username}`);
       modalInterno.scrollTop += 70;
     } else {
-      this.setStatus('Rolando modal...');
+      this.atualizarOverlay('Rolando modal...');
       const prevScroll = modalInterno.scrollTop;
-      modalInterno.scrollTop += 50;
-
+      modalInterno.scrollTop += 60;
       setTimeout(() => {
         if (modalInterno.scrollTop === prevScroll) {
-          this.setStatus(`Fim do modal ou todos os perfis carregados`);
+          this.atualizarOverlay(`Fim do modal ou todos os perfis carregados (${this.perfisSeguidos}/${this.limite})`);
           this.rodando = false;
           clearInterval(this.countdownInterval);
           return;
@@ -237,7 +204,7 @@ async function extractUsernameFromFollowButton(btn) {
 
     if (this.perfisSeguidos >= this.limite) {
       this.rodando = false;
-      this.setStatus(`Limite atingido (${this.limite})`);
+      this.atualizarOverlay(`Limite atingido (${this.limite})`);
       clearInterval(this.countdownInterval);
       return;
     }
@@ -252,11 +219,10 @@ async function extractUsernameFromFollowButton(btn) {
     this.perfisSeguidos = 0;
     this.likesOk = 0;
     this.likesSkip = 0;
-    this.paused = false;
     this.limite = limiteParam || 10;
     this.curtirFoto = curtir !== undefined ? curtir : true;
-    const min = minDelayParam || 120;
-    const max = maxDelayParam || 180;
+    const min = Number(minDelayParam || 120);
+    const max = Number(maxDelayParam || 180);
     this.minDelay = Math.min(min, max) * 1000;
     this.maxDelay = Math.max(min, max) * 1000;
     this.criarOverlays();
@@ -265,27 +231,18 @@ async function extractUsernameFromFollowButton(btn) {
 
   stop() {
     this.rodando = false;
-    this.paused = false;
-    this.setStatus('Automação parada');
+    this.atualizarOverlay('Automação parada');
     clearInterval(this.countdownInterval);
-  }
-
-  togglePause() {
-    if (!this.rodando) return;
-    this.paused = !this.paused;
-    if (this.paused) {
-      this.setStatus('Pausado');
-    } else {
-      this.setStatus('Retomando...');
-    }
   }
 }
 
 const bot = new Bot();
-window.__igBot = bot;
-document.addEventListener('keydown', (e) => {
-  const tag = (e.target.tagName || '').toUpperCase();
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
-  if (e.key === 'p') bot.togglePause();
-  if (e.key === 'x') bot.stop();
+// atalhos: p = pause/resume (recomeça com os mesmos parâmetros), x = stop
+window.addEventListener('keydown', (ev) => {
+  if (ev.key === 'x') bot.stop();
+  if (ev.key === 'p') {
+    if (bot.rodando) { bot.stop(); }
+    else { bot.start(bot.limite, bot.curtirFoto, bot.minDelay/1000, bot.maxDelay/1000); }
+  }
 });
+window.__igBot = bot;
