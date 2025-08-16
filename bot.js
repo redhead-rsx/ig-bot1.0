@@ -6,6 +6,8 @@ class Bot {
     this.overlay = null;
     this.countdownInterval = null;
     this.curtirFoto = true;
+    this.minDelay = 120000;
+    this.maxDelay = 180000;
   }
 
   criarOverlay() {
@@ -23,7 +25,7 @@ class Bot {
   }
 
   getRandomDelay() {
-    return 120000 + Math.random() * 60000;
+    return this.minDelay + Math.random() * (this.maxDelay - this.minDelay);
   }
 
   startCountdown(seconds) {
@@ -133,12 +135,16 @@ class Bot {
     this.startCountdown(delaySegundos);
   }
 
-  start(limiteParam, curtir) {
+  start(limiteParam, curtir, minDelayParam, maxDelayParam) {
     if (this.rodando) return;
     this.rodando = true;
     this.perfisSeguidos = 0;
     this.limite = limiteParam || 10;
     this.curtirFoto = curtir !== undefined ? curtir : true;
+    const min = minDelayParam || 120;
+    const max = maxDelayParam || 180;
+    this.minDelay = Math.min(min, max) * 1000;
+    this.maxDelay = Math.max(min, max) * 1000;
     this.criarOverlay();
     this.seguirProximoUsuario();
   }
