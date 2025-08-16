@@ -123,34 +123,44 @@ class Bot {
   }
 
   extrairUsername(btn) {
-    const avoid = [
-      'p',
-      'reel',
-      'reels',
-      'explore',
-      'accounts',
-      'stories',
-      'direct',
-      'challenge',
-      'tv'
-    ];
+// Substitua o bloco conflitado por esta função:
+async function extractUsernameFromFollowButton(btn) {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const bad = new Set(['p','reel','reels','explore','accounts','stories','direct','challenge','tv']);
+  const notInsideBtn = (el) => !btn.contains(el);
 
-    let current = btn;
-    for (let i = 0; i < 8 && current; i++) {
-      current = current.parentElement;
-      if (!current) break;
+  let current = btn;
+  for (let i = 0; i < 8 && current; i++) {
+    // 1) Tenta âncoras de perfil raiz fora do botão (ex.: "/usuario/")
+    const anchors = Array.from(
+      current.querySelectorAll('a[href^="/"][href$="/"]')
+    ).filter(notInsideBtn);
 
-      const links = Array.from(
-        current.querySelectorAll('a[href^="/"][href$="/"]')
-      ).filter((a) => !btn.contains(a));
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/^\/([^\/?#]+)\/$/);
+      if (!m) continue;
+      const seg = (m[1] || '').toLowerCase();
+      if (!bad.has(seg)) return m[1];
+    }
 
-      for (const link of links) {
-        const href = link.getAttribute('href');
-        const match = href.match(/^\/([^\/]+)\/$/);
-        if (match && !avoid.includes(match[1])) {
-          return match[1];
-        }
-      }
+    // 2) Fallback: spans/divs com dir="auto" (fora do botão), sem espaços e não "seguir/following"
+    const spanCandidate = Array.from(
+      current.querySelectorAll('span[dir="auto"], div[dir="auto"]')
+    )
+      .filter(notInsideBtn)
+      .map(s => (s.innerText || '').trim())
+      .find(t => t && !t.includes(' ') && !/^@?seguir|^@?following|^@?follow$/i.test(t));
+
+    if (spanCandidate) return spanCandidate.replace(/^@/, '');
+
+    current = current.parentElement;
+    await sleep(10); // pequeno respiro pra DOM lazy
+  }
+
+  return 'desconhecido';
+}
+
     }
 
     return 'desconhecido';
