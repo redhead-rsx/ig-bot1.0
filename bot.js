@@ -9,6 +9,10 @@ class Bot {
     this.curtirFoto = true;
     this.minDelay = 120000;
     this.maxDelay = 180000;
+    this.likesOk = 0;
+    this.likesSkip = 0;
+    this.paused = false;
+    this.remaining = 0;
   }
 
   criarOverlays() {
@@ -51,7 +55,6 @@ class Bot {
     if (!this.overlay) {
       this.overlay = document.createElement('div');
       this.overlay.id = 'autoFollowOverlay';
-      this.overlay.innerText = 'Aguardando início...';
       document.body.appendChild(this.overlay);
     }
 
@@ -61,15 +64,18 @@ class Bot {
       this.logOverlay.innerText = 'Perfis seguidos:\n';
       document.body.appendChild(this.logOverlay);
     }
+
+    this.setStatus('Aguardando início...');
   }
 
-  atualizarOverlay(texto) {
-    if (this.overlay) this.overlay.innerText = texto;
+  setStatus(texto) {
+    if (this.overlay)
+      this.overlay.innerText = `${texto}\nSeguidos: ${this.perfisSeguidos}/${this.limite}\n♥️ ${this.likesOk} ⏭️ ${this.likesSkip}`;
   }
 
-  addLog(username) {
+  addLog(username, badge = '') {
     if (this.logOverlay) {
-      this.logOverlay.innerText += `@${username}\n`;
+      this.logOverlay.innerText += `@${username} ${badge}\n`;
       this.logOverlay.scrollTop = this.logOverlay.scrollHeight;
     }
   }
@@ -81,6 +87,7 @@ class Bot {
   startCountdown(seconds) {
     clearInterval(this.countdownInterval);
     let remaining = seconds;
+    this.remaining = remaining;
 
     this.countdownInterval = setInterval(() => {
       if (!this.rodando) {
@@ -88,7 +95,12 @@ class Bot {
         return;
       }
 
-      this.atualizarOverlay(`Aguardando ${remaining}s... (${this.perfisSeguidos}/${this.limite})`);
+      if (this.paused) {
+        this.setStatus(`Pausado (${remaining}s)`);
+        return;
+      }
+
+      this.setStatus(`Aguardando ${remaining}s...`);
 
       if (remaining <= 0) {
         clearInterval(this.countdownInterval);
@@ -96,6 +108,7 @@ class Bot {
       }
 
       remaining--;
+      this.remaining = remaining;
     }, 1000);
   }
 
@@ -114,19 +127,22 @@ class Bot {
     if (container) {
       const link = container.querySelector('a[href^="/"]');
       if (link) {
-        const match = link.getAttribute('href').match(/^\/([^\/]+)\//);
+        const match = link.getAttribute('href').match(/^\/([^\/]+)/);
         if (match) return match[1];
+        if (link.innerText) return link.innerText.trim();
       }
       const span = container.querySelector('span[dir="auto"]');
-      if (span) return span.innerText.trim();
+      if (span && span.innerText) return span.innerText.trim();
+      const txt = container.innerText.replace(/\n/g, ' ').trim();
+      if (txt) return txt.split(' ')[0].replace('@', '');
     }
-    return 'desconhecido';
+    return 'usuario';
   }
 
   requestLike(username) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
-        resolve(resp && resp.result);
+        resolve((resp && resp.result) || 'LIKE_SKIP');
       });
     });
   }
@@ -136,14 +152,14 @@ class Bot {
 
     const modal = document.querySelector('div[role="dialog"]');
     if (!modal) {
-      this.atualizarOverlay('Abra o modal de seguidores');
+      this.setStatus('Abra o modal de seguidores');
       setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
 
     const modalInterno = this.encontrarModalInterno(modal);
     if (!modalInterno) {
-      this.atualizarOverlay('Não encontrou a div interna scrollável');
+      this.setStatus('Não encontrou a div interna scrollável');
       setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
@@ -157,23 +173,32 @@ class Bot {
       const username = this.extrairUsername(btn);
       btn.click();
       this.perfisSeguidos++;
-      this.atualizarOverlay(`Seguindo @${username} (${this.perfisSeguidos}/${this.limite})`);
-      this.addLog(username);
+      this.setStatus(`Seguindo @${username}`);
+      let badge = '';
 
       if (this.curtirFoto) {
-        this.atualizarOverlay(`Curtindo primeira foto de @${username}...`);
-        await this.requestLike(username);
+        this.setStatus(`Curtindo primeira foto de @${username}...`);
+        const result = await this.requestLike(username);
+        if (result === 'LIKE_DONE') {
+          this.likesOk++;
+          badge = '♥️';
+        } else {
+          this.likesSkip++;
+          badge = '⏭️';
+        }
       }
 
+      this.addLog(username, badge);
+      this.setStatus(`Seguido @${username}`);
       modalInterno.scrollTop += 70;
     } else {
-      this.atualizarOverlay('Rolando modal...');
+      this.setStatus('Rolando modal...');
       const prevScroll = modalInterno.scrollTop;
       modalInterno.scrollTop += 50;
 
       setTimeout(() => {
         if (modalInterno.scrollTop === prevScroll) {
-          this.atualizarOverlay(`Fim do modal ou todos os perfis carregados (${this.perfisSeguidos}/${this.limite})`);
+          this.setStatus(`Fim do modal ou todos os perfis carregados`);
           this.rodando = false;
           clearInterval(this.countdownInterval);
           return;
@@ -185,7 +210,7 @@ class Bot {
 
     if (this.perfisSeguidos >= this.limite) {
       this.rodando = false;
-      this.atualizarOverlay(`Limite atingido (${this.limite})`);
+      this.setStatus(`Limite atingido (${this.limite})`);
       clearInterval(this.countdownInterval);
       return;
     }
@@ -198,6 +223,9 @@ class Bot {
     if (this.rodando) return;
     this.rodando = true;
     this.perfisSeguidos = 0;
+    this.likesOk = 0;
+    this.likesSkip = 0;
+    this.paused = false;
     this.limite = limiteParam || 10;
     this.curtirFoto = curtir !== undefined ? curtir : true;
     const min = minDelayParam || 120;
@@ -210,9 +238,27 @@ class Bot {
 
   stop() {
     this.rodando = false;
-    this.atualizarOverlay('Automação parada');
+    this.paused = false;
+    this.setStatus('Automação parada');
     clearInterval(this.countdownInterval);
+  }
+
+  togglePause() {
+    if (!this.rodando) return;
+    this.paused = !this.paused;
+    if (this.paused) {
+      this.setStatus('Pausado');
+    } else {
+      this.setStatus('Retomando...');
+    }
   }
 }
 
 const bot = new Bot();
+window.__igBot = bot;
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+  if (e.key === 'p') bot.togglePause();
+  if (e.key === 'x') bot.stop();
+});
