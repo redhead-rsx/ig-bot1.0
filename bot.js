@@ -3,25 +3,75 @@ class Bot {
     this.rodando = false;
     this.perfisSeguidos = 0;
     this.limite = 10;
-    this.overlay = null;
+    this.overlay = null; // overlay inferior direito
+    this.logOverlay = null; // overlay superior esquerdo
     this.countdownInterval = null;
     this.curtirFoto = true;
     this.minDelay = 120000;
     this.maxDelay = 180000;
   }
 
-  criarOverlay() {
+  criarOverlays() {
+    if (!document.getElementById('autoFollowStyles')) {
+      const style = document.createElement('style');
+      style.id = 'autoFollowStyles';
+      style.textContent = `
+        #autoFollowOverlay {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          background: rgba(0,0,0,0.8);
+          color: #fff;
+          padding: 10px;
+          border-radius: 5px;
+          z-index: 99999;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          white-space: pre-line;
+        }
+        #autoFollowLog {
+          position: fixed;
+          top: 20px;
+          left: 20px;
+          background: rgba(0,0,0,0.8);
+          color: #fff;
+          padding: 10px;
+          border-radius: 5px;
+          z-index: 99999;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          max-height: 60vh;
+          overflow-y: auto;
+          white-space: pre-line;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     if (!this.overlay) {
-      this.overlay = document.createElement("div");
-      this.overlay.id = "autoFollowOverlay";
-      this.overlay.className = "auto-follow-overlay";
-      this.overlay.innerText = "Aguardando início...";
+      this.overlay = document.createElement('div');
+      this.overlay.id = 'autoFollowOverlay';
+      this.overlay.innerText = 'Aguardando início...';
       document.body.appendChild(this.overlay);
+    }
+
+    if (!this.logOverlay) {
+      this.logOverlay = document.createElement('div');
+      this.logOverlay.id = 'autoFollowLog';
+      this.logOverlay.innerText = 'Perfis seguidos:\n';
+      document.body.appendChild(this.logOverlay);
     }
   }
 
   atualizarOverlay(texto) {
     if (this.overlay) this.overlay.innerText = texto;
+  }
+
+  addLog(username) {
+    if (this.logOverlay) {
+      this.logOverlay.innerText += `@${username}\n`;
+      this.logOverlay.scrollTop = this.logOverlay.scrollHeight;
+    }
   }
 
   getRandomDelay() {
@@ -59,22 +109,26 @@ class Bot {
     return null;
   }
 
-  async curtirPrimeiraFoto() {
-    try {
-      const primeiroPost = document.querySelector('article a');
-      if (!primeiroPost) return false;
-
-      primeiroPost.click();
-      await new Promise(r => setTimeout(r, 1500));
-
-      const btnCurtir = document.querySelector('svg[aria-label="Curtir"]');
-      if (btnCurtir) btnCurtir.parentElement.click();
-
-      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-      return true;
-    } catch {
-      return false;
+  extrairUsername(btn) {
+    const container = btn.closest('li') || btn.parentElement;
+    if (container) {
+      const link = container.querySelector('a[href^="/"]');
+      if (link) {
+        const match = link.getAttribute('href').match(/^\/([^\/]+)\//);
+        if (match) return match[1];
+      }
+      const span = container.querySelector('span[dir="auto"]');
+      if (span) return span.innerText.trim();
     }
+    return 'desconhecido';
+  }
+
+  requestLike(username) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
+        resolve(resp && resp.result);
+      });
+    });
   }
 
   async seguirProximoUsuario() {
@@ -82,33 +136,38 @@ class Bot {
 
     const modal = document.querySelector('div[role="dialog"]');
     if (!modal) {
-      this.atualizarOverlay("Abra o modal de seguidores!");
+      this.atualizarOverlay('Abra o modal de seguidores');
       setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
 
     const modalInterno = this.encontrarModalInterno(modal);
     if (!modalInterno) {
-      this.atualizarOverlay("Não encontrou a div interna scrollável!");
+      this.atualizarOverlay('Não encontrou a div interna scrollável');
       setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
 
-    const btn = Array.from(modalInterno.querySelectorAll('button'))
-      .find(b => b.innerText.toLowerCase() === 'seguir' || b.innerText.toLowerCase() === 'follow');
+    const btn = Array.from(modalInterno.querySelectorAll('button')).find((b) => {
+      const t = b.innerText.trim().toLowerCase();
+      return t === 'seguir' || t === 'follow';
+    });
 
     if (btn) {
+      const username = this.extrairUsername(btn);
       btn.click();
       this.perfisSeguidos++;
-      this.atualizarOverlay(`Seguindo... (${this.perfisSeguidos}/${this.limite})`);
+      this.atualizarOverlay(`Seguindo @${username} (${this.perfisSeguidos}/${this.limite})`);
+      this.addLog(username);
 
       if (this.curtirFoto) {
-        await new Promise(r => setTimeout(r, 1500));
-        await this.curtirPrimeiraFoto();
+        this.atualizarOverlay(`Curtindo primeira foto de @${username}...`);
+        await this.requestLike(username);
       }
 
       modalInterno.scrollTop += 70;
     } else {
+      this.atualizarOverlay('Rolando modal...');
       const prevScroll = modalInterno.scrollTop;
       modalInterno.scrollTop += 50;
 
@@ -145,16 +204,15 @@ class Bot {
     const max = maxDelayParam || 180;
     this.minDelay = Math.min(min, max) * 1000;
     this.maxDelay = Math.max(min, max) * 1000;
-    this.criarOverlay();
+    this.criarOverlays();
     this.seguirProximoUsuario();
   }
 
   stop() {
     this.rodando = false;
-    this.atualizarOverlay("Automação parada");
+    this.atualizarOverlay('Automação parada');
     clearInterval(this.countdownInterval);
   }
 }
 
 const bot = new Bot();
-
