@@ -39,3 +39,16 @@ button:hover {
     background-color: #2a76c0;
 }
 
+.auto-follow-overlay {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 9999;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+

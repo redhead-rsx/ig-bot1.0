@@ -12,16 +12,7 @@ class Bot {
     if (!this.overlay) {
       this.overlay = document.createElement("div");
       this.overlay.id = "autoFollowOverlay";
-      this.overlay.style.position = "fixed";
-      this.overlay.style.bottom = "20px";
-      this.overlay.style.right = "20px";
-      this.overlay.style.backgroundColor = "rgba(0,0,0,0.8)";
-      this.overlay.style.color = "white";
-      this.overlay.style.padding = "10px";
-      this.overlay.style.borderRadius = "5px";
-      this.overlay.style.zIndex = "9999";
-      this.overlay.style.fontFamily = "Arial, sans-serif";
-      this.overlay.style.fontSize = "14px";
+      this.overlay.className = "auto-follow-overlay";
       this.overlay.innerText = "Aguardando início...";
       document.body.appendChild(this.overlay);
     }
