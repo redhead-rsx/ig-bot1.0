@@ -8,11 +8,11 @@
     "default_popup": "popup.html"
   },
   "content_scripts": [
-    {
-      "matches": ["https://www.instagram.com/*"],
-      "js": ["contentscript.js"]
-    }
-  ]
-}
+      {
+        "matches": ["https://www.instagram.com/*"],
+        "js": ["bot.js", "contentscript.js"]
+      }
+    ]
+  }
 
 
