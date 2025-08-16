@@ -123,20 +123,36 @@ class Bot {
   }
 
   extrairUsername(btn) {
-    const container = btn.closest('li, div');
-    if (container) {
-      const link = container.querySelector('a[href^="/"][href$="/"]');
-      if (link) {
+    const avoid = [
+      'p',
+      'reel',
+      'reels',
+      'explore',
+      'accounts',
+      'stories',
+      'direct',
+      'challenge',
+      'tv'
+    ];
+
+    let current = btn;
+    for (let i = 0; i < 8 && current; i++) {
+      current = current.parentElement;
+      if (!current) break;
+
+      const links = Array.from(
+        current.querySelectorAll('a[href^="/"][href$="/"]')
+      ).filter((a) => !btn.contains(a));
+
+      for (const link of links) {
         const href = link.getAttribute('href');
-        const match = href.match(/^\/([^\/]+)/);
-        if (match) return match[1];
-        if (link.innerText) return link.innerText.trim();
+        const match = href.match(/^\/([^\/]+)\/$/);
+        if (match && !avoid.includes(match[1])) {
+          return match[1];
+        }
       }
-      const span = container.querySelector('span[dir="auto"]');
-      if (span && span.innerText) return span.innerText.trim().replace(/^@/, '');
-      const txt = container.innerText.replace(/\n/g, ' ').trim();
-      if (txt) return txt.split(' ')[0].replace('@', '');
     }
+
     return 'desconhecido';
   }
 

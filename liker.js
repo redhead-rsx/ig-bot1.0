@@ -28,7 +28,17 @@
     );
     if (!thumb) return send('LIKE_SKIP', 'no_post');
 
-    thumb.click();
+    const simulateClick = (el) => {
+      try {
+        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      } catch (e) {
+        el.click();
+      }
+    };
+    simulateClick(thumb);
 
     const dialog = await waitFor(() => document.querySelector('div[role="dialog"]'));
     if (!dialog) return send('LIKE_SKIP', 'timeout');
