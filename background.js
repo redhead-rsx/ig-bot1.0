@@ -1,7 +1,8 @@
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'LIKE_REQUEST') {
     const username = msg.username;
-    chrome.tabs.create({ url: `https://www.instagram.com/${username}/`, active: false }, (tab) => {
+    const originTabId = sender.tab ? sender.tab.id : null;
+    chrome.tabs.create({ url: `https://www.instagram.com/${username}/`, active: true }, (tab) => {
       const tabId = tab.id;
       let responded = false;
       let timeoutId;
@@ -12,7 +13,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         clearTimeout(timeoutId);
         chrome.runtime.onMessage.removeListener(handleMessage);
         chrome.tabs.onUpdated.removeListener(handleUpdated);
-        chrome.tabs.remove(tabId);
+        chrome.tabs.remove(tabId, () => {
+          if (originTabId) chrome.tabs.update(originTabId, { active: true });
+        });
         sendResponse({ result });
       };
 
@@ -38,7 +41,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       };
       chrome.runtime.onMessage.addListener(handleMessage);
 
-      timeoutId = setTimeout(() => cleanUp('LIKE_SKIP'), 15000);
+      timeoutId = setTimeout(() => cleanUp('LIKE_SKIP'), 25000);
     });
     return true; // Keep the message channel open for sendResponse
   }
