@@ -123,20 +123,21 @@ class Bot {
   }
 
   extrairUsername(btn) {
-    const container = btn.closest('li') || btn.parentElement;
+    const container = btn.closest('li, div');
     if (container) {
-      const link = container.querySelector('a[href^="/"]');
+      const link = container.querySelector('a[href^="/"][href$="/"]');
       if (link) {
-        const match = link.getAttribute('href').match(/^\/([^\/]+)/);
+        const href = link.getAttribute('href');
+        const match = href.match(/^\/([^\/]+)/);
         if (match) return match[1];
         if (link.innerText) return link.innerText.trim();
       }
       const span = container.querySelector('span[dir="auto"]');
-      if (span && span.innerText) return span.innerText.trim();
+      if (span && span.innerText) return span.innerText.trim().replace(/^@/, '');
       const txt = container.innerText.replace(/\n/g, ' ').trim();
       if (txt) return txt.split(' ')[0].replace('@', '');
     }
-    return 'usuario';
+    return 'desconhecido';
   }
 
   requestLike(username) {
