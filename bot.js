@@ -123,42 +123,44 @@ class Bot {
   }
 
   extrairUsername(btn) {
-    const container = btn.closest('li, div');
-    if (!container) return 'desconhecido';
+// Substitua o bloco conflitado por esta função:
+async function extractUsernameFromFollowButton(btn) {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const bad = new Set(['p','reel','reels','explore','accounts','stories','direct','challenge','tv']);
+  const notInsideBtn = (el) => !btn.contains(el);
 
-    const strategies = [
-      () => {
-        const link = container.querySelector('a[href^="/"][href$="/"]');
-        if (link) {
-          const href = link.getAttribute('href');
-          const match = href.match(/^\/([^\/]+)/);
-          if (match) return match[1];
-          if (link.innerText) return link.innerText.trim().replace(/^@/, '');
-        }
-      },
-      () => {
-        const span = container.querySelector('span[dir="auto"], div[dir="auto"]');
-        if (span && span.innerText) {
-          const text = span.innerText.trim();
-          if (text.startsWith('@')) return text.slice(1);
-          if (/^[A-Za-z0-9._]+$/.test(text)) return text;
-        }
-      },
-      () => {
-        const clone = container.cloneNode(true);
-        clone.querySelectorAll('button').forEach((b) => b.remove());
-        const text = clone.innerText.replace(/\n/g, ' ').trim();
-        if (!text) return;
-        for (const token of text.split(/\s+/)) {
-          const cleaned = token.replace(/^@/, '');
-          if (cleaned && /^[A-Za-z0-9._]+$/.test(cleaned)) return cleaned;
-        }
-      },
-    ];
+  let current = btn;
+  for (let i = 0; i < 8 && current; i++) {
+    // 1) Tenta âncoras de perfil raiz fora do botão (ex.: "/usuario/")
+    const anchors = Array.from(
+      current.querySelectorAll('a[href^="/"][href$="/"]')
+    ).filter(notInsideBtn);
 
-    for (const fn of strategies) {
-      const result = fn();
-      if (result) return result;
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/^\/([^\/?#]+)\/$/);
+      if (!m) continue;
+      const seg = (m[1] || '').toLowerCase();
+      if (!bad.has(seg)) return m[1];
+    }
+
+    // 2) Fallback: spans/divs com dir="auto" (fora do botão), sem espaços e não "seguir/following"
+    const spanCandidate = Array.from(
+      current.querySelectorAll('span[dir="auto"], div[dir="auto"]')
+    )
+      .filter(notInsideBtn)
+      .map(s => (s.innerText || '').trim())
+      .find(t => t && !t.includes(' ') && !/^@?seguir|^@?following|^@?follow$/i.test(t));
+
+    if (spanCandidate) return spanCandidate.replace(/^@/, '');
+
+    current = current.parentElement;
+    await sleep(10); // pequeno respiro pra DOM lazy
+  }
+
+  return 'desconhecido';
+}
+
     }
 
     return 'desconhecido';
