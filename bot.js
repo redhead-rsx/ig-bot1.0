@@ -124,19 +124,43 @@ class Bot {
 
   extrairUsername(btn) {
     const container = btn.closest('li, div');
-    if (container) {
-      const link = container.querySelector('a[href^="/"][href$="/"]');
-      if (link) {
-        const href = link.getAttribute('href');
-        const match = href.match(/^\/([^\/]+)/);
-        if (match) return match[1];
-        if (link.innerText) return link.innerText.trim();
-      }
-      const span = container.querySelector('span[dir="auto"]');
-      if (span && span.innerText) return span.innerText.trim().replace(/^@/, '');
-      const txt = container.innerText.replace(/\n/g, ' ').trim();
-      if (txt) return txt.split(' ')[0].replace('@', '');
+    if (!container) return 'desconhecido';
+
+    const strategies = [
+      () => {
+        const link = container.querySelector('a[href^="/"][href$="/"]');
+        if (link) {
+          const href = link.getAttribute('href');
+          const match = href.match(/^\/([^\/]+)/);
+          if (match) return match[1];
+          if (link.innerText) return link.innerText.trim().replace(/^@/, '');
+        }
+      },
+      () => {
+        const span = container.querySelector('span[dir="auto"], div[dir="auto"]');
+        if (span && span.innerText) {
+          const text = span.innerText.trim();
+          if (text.startsWith('@')) return text.slice(1);
+          if (/^[A-Za-z0-9._]+$/.test(text)) return text;
+        }
+      },
+      () => {
+        const clone = container.cloneNode(true);
+        clone.querySelectorAll('button').forEach((b) => b.remove());
+        const text = clone.innerText.replace(/\n/g, ' ').trim();
+        if (!text) return;
+        for (const token of text.split(/\s+/)) {
+          const cleaned = token.replace(/^@/, '');
+          if (cleaned && /^[A-Za-z0-9._]+$/.test(cleaned)) return cleaned;
+        }
+      },
+    ];
+
+    for (const fn of strategies) {
+      const result = fn();
+      if (result) return result;
     }
+
     return 'desconhecido';
   }
 
