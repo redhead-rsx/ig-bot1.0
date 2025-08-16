@@ -1,0 +1,10 @@
+{
+  "name": "ig-bot",
+  "version": "1.0.0",
+  "description": "Chrome extension for Instagram auto-follow bot",
+  "scripts": {
+    "test": "echo 'No tests specified'"
+  },
+  "author": "",
+  "license": "ISC"
+}
