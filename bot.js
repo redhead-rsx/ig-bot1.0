@@ -187,7 +187,7 @@ class Bot {
         }
         const result = resp.result;
         console.log(`[BOT] follow result=${result} job=${jobId}`);
-        if (result === 'ALREADY_FOLLOWS') {
+        if (result === 'ALREADY_FOLLOWS' || result === 'ALREADY_FOLLOWING') {
           this.addLog(username, '⏭️ já segue');
           this.atualizarOverlay(`@${username} ⏭️ já segue (${this.perfisSeguidos}/${this.limite})`);
         } else if (result === 'FOLLOW_DONE') {
@@ -208,6 +208,9 @@ class Bot {
           this.perfisSeguidos++;
           this.addLog(username, 'solicitado');
           this.atualizarOverlay(`@${username} solicitado (${this.perfisSeguidos}/${this.limite})`);
+        } else if (result === 'ERROR') {
+          this.addLog(username, 'erro');
+          this.atualizarOverlay(`@${username} erro (${this.perfisSeguidos}/${this.limite})`);
         } else {
           this.addLog(username, '⏭️');
           this.atualizarOverlay(`@${username} ⏭️ (${this.perfisSeguidos}/${this.limite})`);
