@@ -2,11 +2,6 @@
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
 
-  if (msg.type === 'FOLLOW_DEBUG') {
-    try { console.info('[FOLLOW][SW]', msg); } catch(_) {}
-    return;
-  }
-
   // Novo fluxo de follow (segue no perfil e tenta like opcional)
   if (msg.type === 'FOLLOW_REQUEST' && msg.username) {
     const profileUrl = `https://www.instagram.com/${msg.username}/`;
@@ -48,6 +43,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     const onMsg = (res, snd) => {
       if (!snd?.tab || snd.tab.id !== tabId) return;
+      if (res?.type === 'FOLLOW_DEBUG') {
+        try { console.info('[FOLLOW][SW]', res); } catch (_) {}
+        return;
+      }
       if (res?.type === 'FOLLOW_RESULT') {
         if (!secondTry && (res.result === 'need_focus' || res.result === 'not_visible')) {
           secondTry = true;
