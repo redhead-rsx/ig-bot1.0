@@ -5,6 +5,9 @@ let perfisSeguidos = 0;
 let limite = 10;
 let overlay = null;
 let countdownInterval = null;
+let likesOk = 0;
+let likesSkip = 0;
+let likeFirstPhoto = false;
 
 // Cria overlay
 function criarOverlay() {
@@ -95,12 +98,7 @@ function seguirProximoUsuario() {
         const anchor = listItem ? listItem.querySelector('a[href]') : null;
         const username = anchor ? anchor.textContent.trim() : '';
 
-        const seguirOuPular = () => {
-            btn.click();
-            perfisSeguidos++;
-            atualizarOverlay(`Seguindo... (${perfisSeguidos}/${limite})`);
-
-            // Scroll fixo menor para não pular perfis
+        const prosseguir = () => {
             modalInterno.scrollTop += 70;
 
             if (perfisSeguidos >= limite) {
@@ -114,19 +112,38 @@ function seguirProximoUsuario() {
             startCountdown(delaySegundos);
         };
 
+        const seguirPerfil = () => {
+            btn.click();
+            perfisSeguidos++;
+            atualizarOverlay(`Seguindo... (${perfisSeguidos}/${limite})`);
+
+            if (likeFirstPhoto && username) {
+                chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
+                    if (resp && resp.result === 'LIKE_DONE') {
+                        likesOk++;
+                        atualizarOverlay(`@${username} \u2665\uFE0F (${perfisSeguidos}/${limite})`);
+                    } else {
+                        likesSkip++;
+                        atualizarOverlay(`@${username} \u23ED\uFE0F (${perfisSeguidos}/${limite})`);
+                    }
+                    prosseguir();
+                });
+            } else {
+                prosseguir();
+            }
+        };
+
         if (username) {
             chrome.runtime.sendMessage({ type: 'CHECK_FOLLOWS_ME', username }, (resp) => {
                 if (resp && resp.result === 'FOLLOWS_YOU') {
                     atualizarOverlay(`@${username} \u23ED\uFE0F já segue você (${perfisSeguidos}/${limite})`);
-                    modalInterno.scrollTop += 70;
-                    const delaySegundos = Math.floor(getRandomDelay() / 1000);
-                    startCountdown(delaySegundos);
+                    prosseguir();
                 } else {
-                    seguirOuPular();
+                    seguirPerfil();
                 }
             });
         } else {
-            seguirOuPular();
+            seguirPerfil();
         }
     } else {
         // Scroll para tentar carregar mais perfis
@@ -147,11 +164,14 @@ function seguirProximoUsuario() {
 }
 
 // Iniciar automação
-function iniciar(limiteParam) {
+function iniciar(limiteParam, likeParam) {
     if (rodando) return;
     rodando = true;
     perfisSeguidos = 0;
+    likesOk = 0;
+    likesSkip = 0;
     limite = limiteParam || 10;
+    likeFirstPhoto = !!likeParam;
     criarOverlay();
     seguirProximoUsuario();
 }
@@ -165,6 +185,6 @@ function parar() {
 
 // Recebe mensagens do popup
 chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === 'start') iniciar(msg.limite);
+    if (msg.action === 'start') iniciar(msg.limite, msg.likeFirst);
     if (msg.action === 'stop') parar();
 });
