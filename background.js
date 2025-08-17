@@ -2,6 +2,11 @@
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
 
+  if (msg.type === 'FOLLOW_DEBUG') {
+    try { console.log('[FOLLOW_DEBUG]', msg); } catch(_) {}
+    return;
+  }
+
   // Novo fluxo de follow (segue no perfil e tenta like opcional)
   if (msg.type === 'FOLLOW_REQUEST' && msg.username) {
     const profileUrl = `https://www.instagram.com/${msg.username}/`;
