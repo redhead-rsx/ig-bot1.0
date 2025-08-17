@@ -91,43 +91,12 @@ function seguirProximoUsuario() {
         .find(b => b.innerText.toLowerCase() === 'seguir' || b.innerText.toLowerCase() === 'follow');
 
     if (btn) {
-        const listItem = btn.closest('li');
-        const anchor = listItem ? listItem.querySelector('a[href]') : null;
-        const username = anchor ? anchor.textContent.trim() : '';
+        btn.click();
+        perfisSeguidos++;
+        atualizarOverlay(`Seguindo... (${perfisSeguidos}/${limite})`);
 
-        const seguirOuPular = () => {
-            btn.click();
-            perfisSeguidos++;
-            atualizarOverlay(`Seguindo... (${perfisSeguidos}/${limite})`);
-
-            // Scroll fixo menor para não pular perfis
-            modalInterno.scrollTop += 70;
-
-            if (perfisSeguidos >= limite) {
-                rodando = false;
-                atualizarOverlay(`Limite atingido (${limite})`);
-                clearInterval(countdownInterval);
-                return;
-            }
-
-            const delaySegundos = Math.floor(getRandomDelay() / 1000);
-            startCountdown(delaySegundos);
-        };
-
-        if (username) {
-            chrome.runtime.sendMessage({ type: 'CHECK_FOLLOWS_ME', username }, (resp) => {
-                if (resp && resp.result === 'FOLLOWS_YOU') {
-                    atualizarOverlay(`@${username} \u23ED\uFE0F já segue você (${perfisSeguidos}/${limite})`);
-                    modalInterno.scrollTop += 70;
-                    const delaySegundos = Math.floor(getRandomDelay() / 1000);
-                    startCountdown(delaySegundos);
-                } else {
-                    seguirOuPular();
-                }
-            });
-        } else {
-            seguirOuPular();
-        }
+        // Scroll fixo menor para não pular perfis
+        modalInterno.scrollTop += 70;
     } else {
         // Scroll para tentar carregar mais perfis
         const prevScroll = modalInterno.scrollTop;
@@ -144,6 +113,16 @@ function seguirProximoUsuario() {
         }, 1500);
         return;
     }
+
+    if (perfisSeguidos >= limite) {
+        rodando = false;
+        atualizarOverlay(`Limite atingido (${limite})`);
+        clearInterval(countdownInterval);
+        return;
+    }
+
+    const delaySegundos = Math.floor(getRandomDelay() / 1000);
+    startCountdown(delaySegundos);
 }
 
 // Iniciar automação
