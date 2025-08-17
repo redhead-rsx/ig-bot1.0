@@ -49,13 +49,9 @@
 
     const regions = [];
     const main = document.querySelector('main');
-    if (main) {
-      regions.push(main);
-      const header = main.querySelector('header');
-      if (header) regions.push(header);
-    } else {
-      regions.push(document);
-    }
+    const header = main?.querySelector('header') || document.querySelector('header');
+    if (header) regions.push(header);
+    if (main) regions.push(main); else regions.push(document);
     let btns = [];
     for (const r of regions) {
       btns = btns.concat(Array.from(r.querySelectorAll('button, [role="button"], a')));
@@ -63,7 +59,8 @@
     for (const b of btns) {
       const t = normalize(b.innerText);
       const aria = normalize(b.getAttribute('aria-label'));
-      const combo = `${t} ${aria}`;
+      const title = normalize(b.getAttribute('title'));
+      const combo = `${t} ${aria} ${title}`;
       if (combo.includes('seguir de volta') || combo.includes('follow back')) {
         log('via=follow_back_button');
         return send({ followsYou: true, via: 'follow_back_button' });
