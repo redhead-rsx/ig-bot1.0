@@ -6,7 +6,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'CHECK_FOLLOWS_ME' && msg.username) {
     const profileUrl = `https://www.instagram.com/${msg.username}/`;
     let tabId = null, prevTabId = null, done = false, timer = null, secondTry = false;
-    const log = (...a) => { try { console.log('[CHECK]', ...a); } catch(_) {} };
+    const log = (...a) => { try { console.log('[BG]', ...a); } catch(_) {} };
 
     const cleanup = () => {
       try { chrome.runtime.onMessage.removeListener(onMsg); } catch(_) {}
@@ -16,7 +16,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     const finalize = (result, info) => {
       if (done) return; done = true; cleanup();
-      if (info) log('finalize', result, info); else log('finalize', result);
+      if (info) log(`result=${result}`, info); else log(`result=${result}`);
       const finish = () => {
         const payload = { result };
         if (result === 'FOLLOWS_YOU' && info) payload.via = info;
