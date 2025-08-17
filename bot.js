@@ -153,10 +153,11 @@ class Bot {
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ type: 'CHECK_FOLLOWS_ME', username }, (resp) => {
-          resolve(resp && resp.result);
+          if (resp) resolve(resp);
+          else resolve({ result: 'SKIP' });
         });
       } catch (e) {
-        resolve('SKIP');
+        resolve({ result: 'SKIP' });
       }
     });
   }
@@ -194,10 +195,11 @@ class Bot {
 
       if (t === 'seguir' || t === 'follow') {
         const username = await this.extractUsernameFromFollowButton(btn);
-        const check = await this.requestCheckFollows(username);
+        const { result: check, reason } = await this.requestCheckFollows(username);
         if (check === 'FOLLOWS_YOU') {
-          this.addLog(username, '⏭️ já segue você');
-          this.atualizarOverlay(`@${username} ⏭️ já segue você (${this.perfisSeguidos}/${this.limite})`);
+          const msg = reason === 'follow_back_button' ? '⏭️ já segue (seguir de volta)' : '⏭️ já segue você';
+          this.addLog(username, msg);
+          this.atualizarOverlay(`@${username} ${msg} (${this.perfisSeguidos}/${this.limite})`);
         } else {
           btn.click();
           this.perfisSeguidos++;
