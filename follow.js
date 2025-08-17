@@ -33,7 +33,7 @@
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
-    .replace(/[-_]+/g, ' ')
+    .replace(/[\u00A0\u2010-\u2015\u2212\uFE58\uFE63\uFF0D_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -164,12 +164,13 @@
     await waitFor(() => document.readyState === 'complete', { timeout: 8000, interval: 100 });
     closeOverlays();
     if (document.visibilityState !== 'visible') return send({ result: 'need_focus' });
-    const header = await waitFor(() =>
-      document.querySelector('main > header') ||
-      document.querySelector('main header') ||
-      document.querySelector('header'),
-      { timeout: 6000, interval: 150 }
-    );
+    const findHeader = () => {
+      const direct = document.querySelector('main > header');
+      if (direct) return direct;
+      const title = document.querySelector('main h1, main h2');
+      return title ? title.closest('header, section, div') : document.querySelector('header');
+    };
+    const header = await waitFor(findHeader, { timeout: 6000, interval: 150 });
 
     const isVisible = (el) => {
       if (!el) return false;
@@ -180,12 +181,20 @@
 
     if (!header) {
       const finalDecision = 'NO_FOLLOW_BUTTON';
-      log('decision', { primaryTextNorm: '', primaryState: 'none', secondaryBadge: false, finalDecision });
+      log('', 'none', false, finalDecision, 'no_header');
+      try { chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm: '', primaryState: 'none', secondaryBadge: false, finalDecision, via: 'no_header' }); } catch {}
       return send({ result: finalDecision, decision: finalDecision, via: 'no_header' });
     }
 
     const candidates = Array.from(header.querySelectorAll('button, [role="button"], a[role="button"]')).filter(isVisible);
-    const primaryBtn = candidates[0];
+    const candsData = candidates.map(btn => ({
+      btn,
+      text: normalize((btn.innerText || '') + ' ' + (btn.getAttribute('aria-label') || ''))
+    }));
+    const keyword = /(seguir|follow|seguindo|following|solicitado|requested)/;
+    const prioritized = candsData.filter(c => keyword.test(c.text));
+    const primary = prioritized[0] || candsData[0] || {};
+    const primaryBtn = primary.btn || null;
     const getPrimaryText = () => normalize((primaryBtn?.innerText || '') + ' ' + (primaryBtn?.getAttribute('aria-label') || ''));
     const primaryTextNorm = getPrimaryText();
 
@@ -201,8 +210,8 @@
         .filter(el => el !== primaryBtn && !primaryBtn.contains(el))
         .map(el => normalize(el.innerText))
         .filter(t => t && t.length <= 32);
-      const followsYouTokens = ['segue voce', 'follows you', 'te segue', 'segue te'];
-      secondaryBadge = texts.some(t => followsYouTokens.some(tok => new RegExp(`\\b${tok}\\b`).test(t)));
+      const followsYouTokens = ['segue voce', 'follows you'];
+      secondaryBadge = texts.some(t => followsYouTokens.includes(t));
     }
 
     let finalDecision, via;
@@ -214,7 +223,8 @@
       else { finalDecision = 'CAN_FOLLOW'; via = 'primary_follow'; }
     } else { finalDecision = 'NO_FOLLOW_BUTTON'; via = 'no_primary_match'; }
 
-    log('decision', { primaryTextNorm, primaryState, secondaryBadge, finalDecision });
+    log(primaryTextNorm, primaryState, secondaryBadge, finalDecision, via);
+    try { chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm, primaryState, secondaryBadge, finalDecision, via }); } catch {}
 
     if (finalDecision === 'ALREADY_FOLLOWS') return send({ result: 'ALREADY_FOLLOWS', decision: finalDecision, via });
     if (finalDecision === 'ALREADY_FOLLOWING') return send({ result: 'ALREADY_FOLLOWING', decision: finalDecision, via });
