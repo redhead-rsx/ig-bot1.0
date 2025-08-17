@@ -243,23 +243,47 @@
       secondaryBadge = texts.some(t => followsYouTokens.includes(t));
     }
 
-    let finalDecision, via;
-    if (primaryState === 'follow_back') { finalDecision = 'ALREADY_FOLLOWS'; via = 'primary_follow_back'; }
-    else if (primaryState === 'following') { finalDecision = 'ALREADY_FOLLOWING'; via = 'primary_following'; }
-    else if (primaryState === 'requested') { finalDecision = 'FOLLOW_REQUESTED'; via = 'primary_requested'; }
-    else if (primaryState === 'follow') {
-      if (secondaryBadge) { finalDecision = 'ALREADY_FOLLOWS'; via = 'secondary_follows_you'; }
-      else { finalDecision = 'CAN_FOLLOW'; via = 'primary_follow'; }
-    } else { finalDecision = 'NO_FOLLOW_BUTTON'; via = 'no_primary_match'; }
+    let finalDecision = '', via = '';
+    const sendDebug = () => {
+      log(primaryTextNorm, primaryState, secondaryBadge, finalDecision, via);
+      try {
+        chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm, primaryState, secondaryBadge, finalDecision, via });
+      } catch {}
+    };
 
-    log(primaryTextNorm, primaryState, secondaryBadge, finalDecision, via);
-    try { chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm, primaryState, secondaryBadge, finalDecision, via }); } catch {}
+    if (primaryState === 'follow_back') {
+      finalDecision = 'ALREADY_FOLLOWS';
+      via = 'primary_follow_back';
+      sendDebug();
+      return send({ result: finalDecision, decision: finalDecision, via });
+    }
+    if (primaryState === 'following') {
+      finalDecision = 'ALREADY_FOLLOWING';
+      via = 'primary_following';
+      sendDebug();
+      return send({ result: finalDecision, decision: finalDecision, via });
+    }
+    if (primaryState === 'requested') {
+      finalDecision = 'FOLLOW_REQUESTED';
+      via = 'primary_requested';
+      sendDebug();
+      return send({ result: finalDecision, decision: finalDecision, via });
+    }
+    if (primaryState === 'follow' && secondaryBadge) {
+      finalDecision = 'ALREADY_FOLLOWS';
+      via = 'secondary_follows_you';
+      sendDebug();
+      return send({ result: finalDecision, decision: finalDecision, via });
+    }
+    if (primaryState !== 'follow') {
+      finalDecision = 'NO_FOLLOW_BUTTON';
+      via = 'no_primary_match';
+      sendDebug();
+      return send({ result: finalDecision, decision: finalDecision, via });
+    }
 
-    if (finalDecision === 'ALREADY_FOLLOWS') return send({ result: 'ALREADY_FOLLOWS', decision: finalDecision, via });
-    if (finalDecision === 'ALREADY_FOLLOWING') return send({ result: 'ALREADY_FOLLOWING', decision: finalDecision, via });
-    if (finalDecision === 'FOLLOW_REQUESTED') return send({ result: 'FOLLOW_REQUESTED', decision: finalDecision, via });
-    if (finalDecision === 'NO_FOLLOW_BUTTON') return send({ result: 'NO_FOLLOW_BUTTON', decision: finalDecision, via });
-
+    // primaryState === 'follow' without secondary badge
+    via = 'primary_follow';
     await robustClick(primaryBtn);
     const state = await waitFor(() => {
       const t = getPrimaryText();
@@ -267,20 +291,32 @@
       if (t === 'solicitado' || t === 'requested') return 'FOLLOW_REQUESTED';
       return null;
     }, { timeout: 5000, interval: 200 });
-    if (!state) return send({ result: 'SKIP_NO_ACTION', decision: finalDecision, via });
+
+    if (!state) {
+      finalDecision = 'SKIP_NO_ACTION';
+      via = 'state_not_changed';
+      sendDebug();
+      return send({ result: finalDecision, decision: finalDecision, via });
+    }
+
+    finalDecision = state;
+    sendDebug();
 
     if (state === 'FOLLOW_DONE') {
       if (wantLike) {
         const likeRes = await likeFirstPost();
-        return send({ result: 'FOLLOW_DONE', decision: finalDecision, via, ...likeRes });
+        return send({ result: finalDecision, decision: finalDecision, via, ...likeRes });
       }
-      return send({ result: 'FOLLOW_DONE', decision: finalDecision, via });
+      return send({ result: finalDecision, decision: finalDecision, via });
     }
     if (state === 'FOLLOW_REQUESTED') {
-      return send({ result: 'FOLLOW_REQUESTED', decision: finalDecision, via });
+      return send({ result: finalDecision, decision: finalDecision, via });
     }
 
-    return send({ result: 'SKIP_NO_ACTION', decision: finalDecision, via });
+    finalDecision = 'SKIP_NO_ACTION';
+    via = 'state_not_changed';
+    sendDebug();
+    return send({ result: finalDecision, decision: finalDecision, via });
   } catch (e) {
     send({ result: 'ERROR' });
   }
