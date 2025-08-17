@@ -12,6 +12,8 @@ class Bot {
     this.likesOk = 0;
     this.likesSkip = 0;
     this.followGateOpen = true;
+    this.currentJobId = 0;
+    this.nextActionTimer = null;
   }
 
   criarOverlays() {
@@ -164,23 +166,22 @@ class Bot {
   }
 
   async seguirProximoUsuario() {
-    if (!this.rodando) return;
-    if (!this.followGateOpen) {
-      setTimeout(() => this.seguirProximoUsuario(), 400);
-      return;
-    }
+    if (!this.rodando || !this.followGateOpen) return;
+    const jobId = ++this.currentJobId;
+    if (this.nextActionTimer) { clearTimeout(this.nextActionTimer); this.nextActionTimer = null; }
+    clearInterval(this.countdownInterval);
 
     const modal = document.querySelector('div[role="dialog"]');
     if (!modal) {
       this.atualizarOverlay('Abra o modal de seguidores');
-      setTimeout(() => this.seguirProximoUsuario(), 1000);
+      this.nextActionTimer = setTimeout(() => { this.nextActionTimer = null; this.seguirProximoUsuario(); }, 1000);
       return;
     }
 
     const modalInterno = this.encontrarModalInterno(modal);
     if (!modalInterno) {
       this.atualizarOverlay('Não encontrou a div interna scrollável');
-      setTimeout(() => this.seguirProximoUsuario(), 1000);
+      this.nextActionTimer = setTimeout(() => { this.nextActionTimer = null; this.seguirProximoUsuario(); }, 1000);
       return;
     }
 
@@ -188,18 +189,20 @@ class Bot {
     const buttons = Array.from(modalInterno.querySelectorAll('button'));
     for (const btn of buttons) {
       const t = (btn.innerText || '').trim().toLowerCase();
-
-
       if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
         const username = await this.extractUsernameFromFollowButton(btn);
+        console.log('[BOT] check start', username, 'job', jobId);
         this.followGateOpen = false;
         const { result: check, via } = await this.requestCheckFollows(username);
+        if (jobId !== this.currentJobId) { this.followGateOpen = true; return; }
         this.followGateOpen = true;
+        console.log('[BOT] check result=' + check + (via ? ' via=' + via : '') + ' job=' + jobId);
         if (check === 'FOLLOWS_YOU') {
           const msg = via === 'follow_back_button' ? '⏭️ já segue (seguir de volta)' : '⏭️ já segue você';
           this.addLog(username, msg);
           this.atualizarOverlay(`@${username} ${msg} (${this.perfisSeguidos}/${this.limite})`);
         } else {
+          console.log('[BOT] follow click allowed', username, 'job', jobId);
           btn.click();
           this.perfisSeguidos++;
           this.addLog(username);
@@ -221,11 +224,11 @@ class Bot {
     }
 
     if (!acted) {
-
       this.atualizarOverlay('Rolando modal...');
       const prevScroll = modalInterno.scrollTop;
       modalInterno.scrollTop += 60;
-      setTimeout(() => {
+      this.nextActionTimer = setTimeout(() => {
+        this.nextActionTimer = null;
         if (modalInterno.scrollTop === prevScroll) {
           this.atualizarOverlay(`Fim do modal ou todos os perfis carregados (${this.perfisSeguidos}/${this.limite})`);
           this.rodando = false;

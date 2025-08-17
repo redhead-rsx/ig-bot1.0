@@ -65,7 +65,7 @@
       const aria = normalize(b.getAttribute('aria-label'));
       const combo = `${t} ${aria}`;
       if (combo.includes('seguir de volta') || combo.includes('follow back')) {
-        log('follow back button');
+        log('via=follow_back_button');
         return send({ followsYou: true, via: 'follow_back_button' });
       }
     }
@@ -78,7 +78,7 @@
 
     const tokens = ['segue voce','follows you','te segue','segue te'];
     if (tokens.some(t => text.includes(t))) {
-      log('follows you text');
+      log('via=text_indicator');
       return send({ followsYou: true, via: 'text_indicator' });
     }
 
