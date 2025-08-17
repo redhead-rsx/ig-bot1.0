@@ -184,6 +184,12 @@ class Bot {
       const t = (btn.innerText || '').trim().toLowerCase();
       if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
         const username = await this.extractUsernameFromFollowButton(btn);
+        if (!username || username === 'desconhecido') {
+          this.addLog('desconhecido', '⚠️');
+          this.atualizarOverlay(`@desconhecido ⚠️ (${this.perfisSeguidos}/${this.limite})`);
+          console.log('[BOT] username desconhecido, pulando');
+          continue;
+        }
         const user = username;
         console.log(`[BOT] follow start @${user} job=${jobId}`);
         this.followGateOpen = false;
