@@ -2,7 +2,7 @@
   const DEBUG = true;
   const log = (...a) => { try { if (DEBUG) console.log('[FOLLOW]', ...a); } catch(_) {} };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, { timeout = 8000, interval = 150 } = {}) => {
+  const waitFor = async (fn, { timeout = 12000, interval = 150 } = {}) => {
     const t0 = Date.now();
     while (Date.now() - t0 < timeout) {
       try { const v = fn(); if (v) return v; } catch {}
@@ -102,7 +102,7 @@
       if (txt.includes('esta conta e privada') || txt.includes('conta privada') || txt.includes('this account is private')) {
         return { like: 'SKIP', likeReason: 'private' };
       }
-      const main = await waitFor(() => document.querySelector('main'), { timeout: 6000 });
+      const main = await waitFor(() => document.querySelector('main'), { timeout: 12000 });
       const findFirstPostLink = () => {
         const q = (sel) => (main ? main.querySelector(sel) : document.querySelector(sel));
         return q('article a[href*="/p/"]') || q('article a[href*="/reel/"]') || q('a[href*="/p/"]') || q('a[href*="/reel/"]');
@@ -123,11 +123,11 @@
         const url = new URL(anchor.getAttribute('href'), location.origin).href;
         location.assign(url);
         await waitFor(() => (/\/p\/|\/reel\//.test(location.pathname)), { timeout: 10000, interval: 150 });
-        await waitFor(() => document.readyState === 'complete', { timeout: 6000, interval: 100 });
+        await waitFor(() => document.readyState === 'complete', { timeout: 12000, interval: 100 });
         await sleep(400);
         closeOverlays();
       }
-      let btn = await waitFor(findLikeBtn, { timeout: 7000, interval: 150 });
+      let btn = await waitFor(findLikeBtn, { timeout: 12000, interval: 150 });
       if (isLiked(btn)) return { like: 'DONE' };
       if (btn) {
         await robustClick(btn);
@@ -161,7 +161,7 @@
   };
 
   try {
-    await waitFor(() => document.readyState === 'complete', { timeout: 8000, interval: 100 });
+    await waitFor(() => document.readyState === 'complete', { timeout: 12000, interval: 100 });
     closeOverlays();
     if (document.visibilityState !== 'visible') return send({ result: 'need_focus' });
     const findHeader = () => {
@@ -170,7 +170,7 @@
       const title = document.querySelector('main h1, main h2');
       return title ? title.closest('header, section, div') : document.querySelector('header');
     };
-    const header = await waitFor(findHeader, { timeout: 6000, interval: 150 });
+    const header = await waitFor(findHeader, { timeout: 12000, interval: 150 });
 
     const isVisible = (el) => {
       if (!el) return false;
@@ -290,7 +290,7 @@
       if (t === 'seguindo' || t === 'following') return 'FOLLOW_DONE';
       if (t === 'solicitado' || t === 'requested') return 'FOLLOW_REQUESTED';
       return null;
-    }, { timeout: 5000, interval: 200 });
+    }, { timeout: 9000, interval: 200 });
 
     if (!state) {
       finalDecision = 'SKIP_NO_ACTION';
