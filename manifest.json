@@ -24,6 +24,12 @@
       ],
       "js": ["bot.js", "contentscript.js"]
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["follow.js", "liker.js", "checker.js"],
+      "matches": ["https://www.instagram.com/*"]
+    }
   ]
 }
 

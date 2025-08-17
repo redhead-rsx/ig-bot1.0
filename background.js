@@ -86,6 +86,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       );
     };
+
+    // helper para injetar liker.js e aguardar LIKE_RESULT
+    const runLikerFallback = (followResult) => {
+      const onLike = (likeMsg, snd) => {
+        if (!snd?.tab || snd.tab.id !== tabId) return;
+        if (likeMsg?.type !== 'LIKE_RESULT') return;
+        try { chrome.runtime.onMessage.removeListener(onLike); } catch {}
+        followResult.like = likeMsg.result || 'ERROR';
+        if (likeMsg.reason) followResult.likeReason = likeMsg.reason;
+        if (followResult.like === 'DONE' && !followResult.likeReason) {
+          followResult.likeReason = 'fallback_liker';
+        }
+        finalize(followResult);
+      };
+
+      try { chrome.runtime.onMessage.addListener(onLike); } catch {}
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['liker.js'], world: 'MAIN' },
+        () => {
+          const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
+          if (err) {
+            try { chrome.runtime.onMessage.removeListener(onLike); } catch {}
+            finalize(followResult);
+          }
+        }
+      );
+    };
+
     const onMsg = (res, snd) => {
       if (!snd?.tab || snd.tab.id !== tabId) return;
       if (res?.type === 'FOLLOW_DEBUG') {
@@ -98,6 +126,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
           return;
         }
+
+        if (msg.wantLike && res.result === 'FOLLOW_DONE' && res.like !== 'DONE') {
+          return runLikerFallback(res);
+        }
+
         finalize(res);
       }
     };
@@ -117,5 +150,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     });
     return true;
+  }
+
+  // --- checagem se "segue você" usando checker.js ---
+  if (msg.type === 'CHECK_REQUEST' && msg.username) {
+    const profileUrl = `https://www.instagram.com/${msg.username}/`;
+    let tabId = null, done = false;
+
+    const finish = (payload) => {
+      if (done) return; done = true;
+      const close = () => {
+        if (tabId != null) chrome.tabs.remove(tabId, () => sendResponse(payload));
+        else sendResponse(payload);
+      };
+      close();
+    };
+
+    const onMsgCheck = (m, snd) => {
+      if (!snd?.tab || snd.tab.id !== tabId) return;
+      if (m?.type !== 'CHECK_DONE') return;
+      try { chrome.runtime.onMessage.removeListener(onMsgCheck); } catch {}
+      finish(m);
+    };
+
+    chrome.runtime.onMessage.addListener(onMsgCheck);
+    chrome.tabs.create({ url: profileUrl, active: false }, (tab) => {
+      if (chrome.runtime.lastError || !tab?.id) return finish({ ok: false, reason: 'tab_create' });
+      tabId = tab.id;
+      const onUpdated = (id, info) => {
+        if (id !== tabId || info.status !== 'complete') return;
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        chrome.scripting.executeScript(
+          { target: { tabId }, files: ['checker.js'], world: 'MAIN' },
+          () => {
+            const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
+            if (err) finish({ ok: false, reason: 'inject_error' });
+          }
+        );
+      };
+      chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+
+    return true; // responderemos async
   }
 });
