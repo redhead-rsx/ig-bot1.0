@@ -1,4 +1,5 @@
 (async () => {
+  // Executado somente quando o perfil foi seguido com sucesso
   const DEBUG = true;
   const log = (...a) => { try { if (DEBUG) console.log('[LIKER]', ...a); } catch(_) {} };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

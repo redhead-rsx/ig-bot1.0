@@ -39,6 +39,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const onMsg = (res, snd) => {
       if (!snd?.tab || snd.tab.id !== tabId) return;
       if (res?.type === 'CHECK_RESULT') {
+        // FOLLOWS_YOU cobre tanto "Segue você" quanto o botão "Seguir de volta"
         if (res.result === 'FOLLOWS_YOU' || res.result === 'NOT_FOLLOWING') {
           finalize(res.result);
         } else if (!secondTry && res.reason === 'not_visible') {

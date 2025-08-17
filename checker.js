@@ -42,6 +42,18 @@
       return send('SKIP', 'not_visible');
     }
 
+    const normalize = (s) => (s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+    for (const b of btns) {
+      const t = normalize(b.innerText);
+      const aria = normalize(b.getAttribute('aria-label'));
+      const combo = `${t} ${aria}`;
+      if (combo.includes('seguir de volta') || combo.includes('follow back')) {
+        log('follow back button');
+        return send('FOLLOWS_YOU');
+      }
+    }
+
     const areas = [];
     const main = document.querySelector('main');
     if (main) {
