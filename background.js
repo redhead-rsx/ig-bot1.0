@@ -1,139 +1,132 @@
-// background.js
-// Service worker handling tab operations and profile follow checks/likes
-
-const CHECK_TIMEOUT = 15000; // 15s overall timeout
-const LIKE_TIMEOUT = 20000; // 20s overall timeout
-
-async function checkFollowsMe(username) {
-  const result = await new Promise(async (resolve) => {
-    let originalTab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-    let tempTab = await chrome.tabs.create({ url: `https://www.instagram.com/${username}/`, active: false });
-    let tempTabId = tempTab.id;
-    let done = false;
-    let activated = false;
-
-    const timer = setTimeout(() => finalize('timeout'), CHECK_TIMEOUT);
-
-    function finalize(status) {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      chrome.runtime.onMessage.removeListener(messageListener);
-      chrome.tabs.onUpdated.removeListener(updateListener);
-      if (tempTabId) chrome.tabs.remove(tempTabId);
-      if (originalTab && originalTab.id) chrome.tabs.update(originalTab.id, { active: true });
-      let result;
-      if (status === 'FOLLOWS_YOU') result = { result: 'FOLLOWS_YOU' };
-      else if (status === 'NOT_FOLLOWING') result = { result: 'NOT_FOLLOWING' };
-      else result = { result: 'SKIP' };
-      resolve(result);
-    }
-
-    function inject(attempt = 0) {
-      chrome.scripting
-        .executeScript({ target: { tabId: tempTabId }, files: ['checker.js'], world: 'MAIN' })
-        .catch((err) => {
-          console.log('[CHECK] inject error', err.message);
-          if (/No frame|Frame.*removed/i.test(err.message) && attempt < 3) {
-            setTimeout(() => inject(attempt + 1), 300);
-          } else {
-            finalize('error');
-          }
-        });
-    }
-
-    function messageListener(msg, sender) {
-      if (!sender.tab || sender.tab.id !== tempTabId || msg.type !== 'CHECK_RESULT') return;
-      console.log('[CHECK] result', msg.status);
-      if (msg.status === 'not_visible' && !activated) {
-        activated = true;
-        chrome.tabs.update(tempTabId, { active: true }, () => setTimeout(() => inject(), 300));
-        return;
-      }
-      finalize(msg.status);
-    }
-
-    function updateListener(tabId, info) {
-      if (tabId === tempTabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(updateListener);
-        inject();
-      }
-    }
-
-    chrome.runtime.onMessage.addListener(messageListener);
-    chrome.tabs.onUpdated.addListener(updateListener);
-  });
-
-  return result;
-}
-
+// Service worker MV3
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'CHECK_FOLLOWS_ME') {
-    checkFollowsMe(msg.username).then(sendResponse);
-    return true; // keep the message channel open
+  if (!msg) return;
+
+  // Checagem se já segue
+  if (msg.type === 'CHECK_FOLLOWS_ME' && msg.username) {
+    const profileUrl = `https://www.instagram.com/${msg.username}/`;
+    let tabId = null, prevTabId = null, done = false, timer = null, secondTry = false;
+    const log = (...a) => { try { console.log('[CHECK]', ...a); } catch(_) {} };
+
+    const cleanup = () => {
+      try { chrome.runtime.onMessage.removeListener(onMsg); } catch(_) {}
+      try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch(_) {}
+      try { chrome.tabs.onRemoved.removeListener(onRemoved); } catch(_) {}
+      if (timer) clearTimeout(timer);
+    };
+    const finalize = (result, reason) => {
+      if (done) return; done = true; cleanup();
+      if (reason) log('finalize', result, reason);
+      const finish = () => {
+        if (prevTabId != null) chrome.tabs.update(prevTabId, { active: true }, () => sendResponse({ result }));
+        else sendResponse({ result });
+      };
+      if (tabId != null) chrome.tabs.remove(tabId, () => finish()); else finish();
+    };
+    const inject = (attempt = 1) => {
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['checker.js'], world: 'MAIN' },
+        () => {
+          const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
+          if (err) {
+            log('inject error', err);
+            if (/Frame .* was removed|No frame/i.test(err) && attempt < 4) return setTimeout(() => inject(attempt + 1), 350);
+            return finalize('SKIP', 'inject_error');
+          }
+        }
+      );
+    };
+    const onMsg = (res, snd) => {
+      if (!snd?.tab || snd.tab.id !== tabId) return;
+      if (res?.type === 'CHECK_RESULT') {
+        if (res.result === 'FOLLOWS_YOU' || res.result === 'NOT_FOLLOWING') {
+          finalize(res.result);
+        } else if (!secondTry && res.reason === 'not_visible') {
+          secondTry = true;
+          chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
+        } else {
+          finalize('SKIP', res.reason || 'unknown');
+        }
+      }
+    };
+    const onUpdated = (id, info) => { if (id === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(onUpdated); inject(1); } };
+    const onRemoved = (id) => { if (id === tabId) finalize('SKIP', 'tab_closed'); };
+
+    timer = setTimeout(() => finalize('SKIP', 'timeout'), 15000); // timeout total
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      prevTabId = tabs?.[0]?.id ?? null;
+      chrome.runtime.onMessage.addListener(onMsg);
+      chrome.tabs.onRemoved.addListener(onRemoved);
+      chrome.tabs.create({ url: profileUrl, active: false }, (tab) => {
+        if (chrome.runtime.lastError || !tab?.id) return finalize('SKIP', 'tab_create');
+        tabId = tab.id;
+        chrome.tabs.onUpdated.addListener(onUpdated);
+      });
+    });
+
+    return true; // resposta assíncrona
   }
-  if (msg.type === 'LIKE_REQUEST') {
-    likeFirstPost(msg.username).then(sendResponse);
-    return true;
+
+  // Fluxo de curtida existente
+  if (msg.type === 'LIKE_REQUEST' && msg.username) {
+    const profileUrl = `https://www.instagram.com/${msg.username}/`;
+    let tabId = null, prevTabId = null, done = false, timer = null, secondTry = false;
+
+    const cleanup = () => {
+      try { chrome.runtime.onMessage.removeListener(onMsg); } catch(_) {}
+      try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch(_) {}
+      try { chrome.tabs.onRemoved.removeListener(onRemoved); } catch(_) {}
+      if (timer) clearTimeout(timer);
+    };
+    const finalize = (result) => {
+      if (done) return; done = true; cleanup();
+      const finish = () => {
+        if (prevTabId != null) chrome.tabs.update(prevTabId, { active: true }, () => sendResponse({ result }));
+        else sendResponse({ result });
+      };
+      if (tabId != null) chrome.tabs.remove(tabId, () => finish()); else finish();
+    };
+    const inject = (attempt = 1) => {
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['liker.js'], world: 'MAIN' },
+        () => {
+          const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
+          if (err) {
+            if (/Frame .* was removed|No frame/i.test(err) && attempt < 4) return setTimeout(() => inject(attempt + 1), 350);
+            return finalize('LIKE_SKIP');
+          }
+        }
+      );
+    };
+    const onMsg = (res, snd) => {
+      if (!snd?.tab || snd.tab.id !== tabId) return;
+      if (res?.type === 'LIKE_DONE') return finalize('LIKE_DONE');
+      if (res?.type === 'LIKE_SKIP') {
+        if (!secondTry && (res.reason === 'not_visible' || res.reason === 'no_post')) {
+          secondTry = true;
+          chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
+        } else {
+          finalize('LIKE_SKIP');
+        }
+      }
+    };
+    const onUpdated = (id, info) => { if (id === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(onUpdated); inject(1); } };
+    const onRemoved = (id) => { if (id === tabId) finalize('LIKE_SKIP'); };
+
+    timer = setTimeout(() => finalize('LIKE_SKIP'), 20000); // timeout total
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      prevTabId = tabs?.[0]?.id ?? null;
+      chrome.runtime.onMessage.addListener(onMsg);
+      chrome.tabs.onRemoved.addListener(onRemoved);
+      chrome.tabs.create({ url: profileUrl, active: false }, (tab) => {
+        if (chrome.runtime.lastError || !tab?.id) return finalize('LIKE_SKIP');
+        tabId = tab.id;
+        chrome.tabs.onUpdated.addListener(onUpdated);
+      });
+    });
+
+    return true; // resposta assíncrona
   }
 });
-
-async function likeFirstPost(username) {
-  const result = await new Promise(async (resolve) => {
-    let originalTab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-    let tempTab = await chrome.tabs.create({ url: `https://www.instagram.com/${username}/`, active: false });
-    let tempTabId = tempTab.id;
-    let done = false;
-    let activated = false;
-
-    const timer = setTimeout(() => finalize('LIKE_SKIP', 'timeout'), LIKE_TIMEOUT);
-
-    function finalize(status, reason) {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      chrome.runtime.onMessage.removeListener(messageListener);
-      chrome.tabs.onUpdated.removeListener(updateListener);
-      if (tempTabId) chrome.tabs.remove(tempTabId);
-      if (originalTab && originalTab.id) chrome.tabs.update(originalTab.id, { active: true });
-      if (status === 'LIKE_DONE') resolve({ result: 'LIKE_DONE' });
-      else resolve({ result: 'LIKE_SKIP', reason });
-    }
-
-    function inject(attempt = 0) {
-      chrome.scripting
-        .executeScript({ target: { tabId: tempTabId }, files: ['liker.js'], world: 'MAIN' })
-        .catch((err) => {
-          console.log('[LIKE] inject error', err.message);
-          if (/No frame|Frame.*removed/i.test(err.message) && attempt < 3) {
-            setTimeout(() => inject(attempt + 1), 300);
-          } else {
-            finalize('LIKE_SKIP', 'error');
-          }
-        });
-    }
-
-    function messageListener(msg, sender) {
-      if (!sender.tab || sender.tab.id !== tempTabId || msg.type !== 'LIKE_RESULT') return;
-      console.log('[LIKE] result', msg.status, msg.reason);
-      if ((msg.reason === 'not_visible' || msg.reason === 'no_post') && !activated) {
-        activated = true;
-        chrome.tabs.update(tempTabId, { active: true }, () => setTimeout(() => inject(), 300));
-        return;
-      }
-      finalize(msg.status, msg.reason);
-    }
-
-    function updateListener(tabId, info) {
-      if (tabId === tempTabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(updateListener);
-        inject();
-      }
-    }
-
-    chrome.runtime.onMessage.addListener(messageListener);
-    chrome.tabs.onUpdated.addListener(updateListener);
-  });
-
-  return result;
-}

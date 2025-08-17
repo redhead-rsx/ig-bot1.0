@@ -39,3 +39,32 @@ button:hover {
     background-color: #2a76c0;
 }
 
+#autoFollowOverlay {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 9999;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    white-space: pre-line;
+}
+
+#autoFollowLog {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 9999;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    max-height: 60vh;
+    overflow-y: auto;
+    white-space: pre-line;
+}
