@@ -148,6 +148,19 @@ class Bot {
     });
   }
 
+
+  requestCheckFollows(username) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'CHECK_FOLLOWS_ME', username }, (resp) => {
+          resolve(resp && resp.result);
+        });
+      } catch (e) {
+        resolve('SKIP');
+      }
+    });
+  }
+
   async seguirProximoUsuario() {
     if (!this.rodando) return;
 
@@ -170,23 +183,31 @@ class Bot {
       return t === 'seguir' || t === 'follow';
     });
 
+
     if (btn) {
       const username = await this.extractUsernameFromFollowButton(btn);
-      btn.click();
-      this.perfisSeguidos++;
-      this.addLog(username);
-
-      if (this.curtirFoto) {
-        this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
-        const result = await this.requestLike(username);
-        if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
-        else { this.likesSkip++; this.addLog(username, '⏭️'); }
+      const check = await this.requestCheckFollows(username);
+      if (check === 'FOLLOWS_YOU') {
+        this.addLog(username, '⏭️ já segue você');
+        this.atualizarOverlay(`@${username} ⏭️ já segue você (${this.perfisSeguidos}/${this.limite})`);
       } else {
-        this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
+        btn.click();
+        this.perfisSeguidos++;
+        this.addLog(username);
+
+        if (this.curtirFoto) {
+          this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
+          const result = await this.requestLike(username);
+          if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
+          else { this.likesSkip++; this.addLog(username, '⏭️'); }
+        } else {
+          this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
+        }
       }
 
       modalInterno.scrollTop += 70;
     } else {
+
       this.atualizarOverlay('Rolando modal...');
       const prevScroll = modalInterno.scrollTop;
       modalInterno.scrollTop += 60;
