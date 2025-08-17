@@ -3,7 +3,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
 
   if (msg.type === 'FOLLOW_DEBUG') {
-    try { console.log('[FOLLOW_DEBUG]', msg); } catch(_) {}
+    try { console.info('[FOLLOW][SW]', msg); } catch(_) {}
     return;
   }
 
