@@ -191,23 +191,28 @@ class Bot {
       const t = (btn.innerText || '').trim().toLowerCase();
       if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
         const username = await this.extractUsernameFromFollowButton(btn);
-        console.log('[BOT] check start', username, 'job', jobId);
+        console.log(`[BOT] check start @${username} job=${jobId}`);
         this.followGateOpen = false;
         const { result: check, via } = await this.requestCheckFollows(username);
-        if (jobId !== this.currentJobId) { this.followGateOpen = true; return; }
-        this.followGateOpen = true;
-        console.log('[BOT] check result=' + check + (via ? ' via=' + via : '') + ' job=' + jobId);
+        if (jobId !== this.currentJobId) {
+          console.log('[BOT] stale job, ignoring');
+          this.followGateOpen = true;
+          return;
+        }
+        console.log(`[BOT] check result=${check}${via ? ' via=' + via : ''} job=${jobId}`);
         if (check === 'FOLLOWS_YOU') {
           const msg = via === 'follow_back_button' ? '⏭️ já segue (seguir de volta)' : '⏭️ já segue você';
           this.addLog(username, msg);
           this.atualizarOverlay(`@${username} ${msg} (${this.perfisSeguidos}/${this.limite})`);
+          this.followGateOpen = true;
         } else {
-          console.log('[BOT] follow click allowed', username, 'job', jobId);
+          this.followGateOpen = true;
+          console.log(`[BOT] follow gate OPEN job=${jobId}`);
           btn.click();
           this.perfisSeguidos++;
           this.addLog(username);
 
-          if (this.curtirFoto) {
+          if (this.curtirFoto && jobId === this.currentJobId) {
             this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
             const result = await this.requestLike(username);
             if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }

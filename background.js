@@ -47,10 +47,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
         } else if (res.followsYou === true) {
           finalize('FOLLOWS_YOU', res.via);
+          return;
         } else if (res.followsYou === false) {
           finalize('NOT_FOLLOWING');
+          return;
         } else {
           finalize('SKIP', res.reason || 'unknown');
+          return;
         }
       }
     };
