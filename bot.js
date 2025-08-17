@@ -11,6 +11,7 @@ class Bot {
     this.maxDelay = 180000;
     this.likesOk = 0;
     this.likesSkip = 0;
+    this.followGateOpen = true;
   }
 
   criarOverlays() {
@@ -164,6 +165,10 @@ class Bot {
 
   async seguirProximoUsuario() {
     if (!this.rodando) return;
+    if (!this.followGateOpen) {
+      setTimeout(() => this.seguirProximoUsuario(), 400);
+      return;
+    }
 
     const modal = document.querySelector('div[role="dialog"]');
     if (!modal) {
@@ -184,20 +189,14 @@ class Bot {
     for (const btn of buttons) {
       const t = (btn.innerText || '').trim().toLowerCase();
 
-      if (t === 'seguir de volta' || t === 'follow back') {
-        const username = await this.extractUsernameFromFollowButton(btn);
-        this.addLog(username, '⏭️ já segue (seguir de volta)');
-        this.atualizarOverlay(`@${username} ⏭️ já segue (seguir de volta) (${this.perfisSeguidos}/${this.limite})`);
-        modalInterno.scrollTop += 70;
-        acted = true;
-        break;
-      }
 
-      if (t === 'seguir' || t === 'follow') {
+      if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
         const username = await this.extractUsernameFromFollowButton(btn);
-        const { result: check, reason } = await this.requestCheckFollows(username);
+        this.followGateOpen = false;
+        const { result: check, via } = await this.requestCheckFollows(username);
+        this.followGateOpen = true;
         if (check === 'FOLLOWS_YOU') {
-          const msg = reason === 'follow_back_button' ? '⏭️ já segue (seguir de volta)' : '⏭️ já segue você';
+          const msg = via === 'follow_back_button' ? '⏭️ já segue (seguir de volta)' : '⏭️ já segue você';
           this.addLog(username, msg);
           this.atualizarOverlay(`@${username} ${msg} (${this.perfisSeguidos}/${this.limite})`);
         } else {

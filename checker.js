@@ -1,6 +1,6 @@
 (async () => {
   const DEBUG = true;
-  const log = (...a) => { try { if (DEBUG) console.log('[CHECK]', ...a); } catch(_) {} };
+  const log = (...a) => { try { if (DEBUG) console.log('[CHECK]', ...a); } catch (_) {} };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, { timeout = 8000, interval = 150 } = {}) => {
     const t0 = Date.now();
@@ -10,11 +10,8 @@
     }
     return null;
   };
-  const send = (result, reason) => {
-    try {
-      const obj = reason ? { type: 'CHECK_RESULT', result, reason } : { type: 'CHECK_RESULT', result };
-      chrome.runtime.sendMessage(obj);
-    } catch (_) {}
+  const send = (payload) => {
+    try { chrome.runtime.sendMessage({ type: 'CHECK_DONE', ...payload }); } catch (_) {}
   };
 
   const closeOverlays = () => {
@@ -39,7 +36,7 @@
 
     if (document.visibilityState !== 'visible') {
       log('not visible');
-      return send('SKIP', 'not_visible');
+      return send({ reason: 'not_visible' });
     }
 
     const normalize = (s) => (s || '')
@@ -69,26 +66,26 @@
       const combo = `${t} ${aria}`;
       if (combo.includes('seguir de volta') || combo.includes('follow back')) {
         log('follow back button');
-        return send('FOLLOWS_YOU', 'follow_back_button');
+        return send({ followsYou: true, via: 'follow_back_button' });
       }
     }
 
     const text = regions.map(el => normalize(el.innerText)).join(' ');
     if (!text) {
       log('no indicator text');
-      return send('SKIP', 'no_indicator');
+      return send({ reason: 'no_indicator' });
     }
 
     const tokens = ['segue voce','follows you','te segue','segue te'];
     if (tokens.some(t => text.includes(t))) {
-      log('follows you');
-      return send('FOLLOWS_YOU');
+      log('follows you text');
+      return send({ followsYou: true, via: 'text_indicator' });
     }
 
     log('not following');
-    send('NOT_FOLLOWING');
+    send({ followsYou: false });
   } catch (e) {
     log('error', e?.message);
-    send('SKIP', 'error');
+    send({ reason: 'error' });
   }
 })();

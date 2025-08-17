@@ -14,11 +14,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { chrome.tabs.onRemoved.removeListener(onRemoved); } catch(_) {}
       if (timer) clearTimeout(timer);
     };
-    const finalize = (result, reason) => {
+    const finalize = (result, info) => {
       if (done) return; done = true; cleanup();
-      if (reason) log('finalize', result, reason); else log('finalize', result);
+      if (info) log('finalize', result, info); else log('finalize', result);
       const finish = () => {
-        const payload = reason ? { result, reason } : { result };
+        const payload = { result };
+        if (result === 'FOLLOWS_YOU' && info) payload.via = info;
+        else if (info) payload.reason = info;
         if (prevTabId != null) chrome.tabs.update(prevTabId, { active: true }, () => sendResponse(payload));
         else sendResponse(payload);
       };
@@ -39,13 +41,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     const onMsg = (res, snd) => {
       if (!snd?.tab || snd.tab.id !== tabId) return;
-      if (res?.type === 'CHECK_RESULT') {
-        // FOLLOWS_YOU cobre tanto "Segue você" quanto o botão "Seguir de volta"
-        if (res.result === 'FOLLOWS_YOU' || res.result === 'NOT_FOLLOWING') {
-          finalize(res.result, res.reason);
-        } else if (!secondTry && res.reason === 'not_visible') {
+      if (res?.type === 'CHECK_DONE') {
+        if (res.reason === 'not_visible' && !secondTry) {
           secondTry = true;
           chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
+        } else if (res.followsYou === true) {
+          finalize('FOLLOWS_YOU', res.via);
+        } else if (res.followsYou === false) {
+          finalize('NOT_FOLLOWING');
         } else {
           finalize('SKIP', res.reason || 'unknown');
         }
