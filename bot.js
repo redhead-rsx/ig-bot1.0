@@ -178,35 +178,48 @@ class Bot {
       return;
     }
 
-    const btn = Array.from(modalInterno.querySelectorAll('button')).find((b) => {
-      const t = (b.innerText || '').trim().toLowerCase();
-      return t === 'seguir' || t === 'follow';
-    });
+    let acted = false;
+    const buttons = Array.from(modalInterno.querySelectorAll('button'));
+    for (const btn of buttons) {
+      const t = (btn.innerText || '').trim().toLowerCase();
 
-
-    if (btn) {
-      const username = await this.extractUsernameFromFollowButton(btn);
-      const check = await this.requestCheckFollows(username);
-      if (check === 'FOLLOWS_YOU') {
-        this.addLog(username, '⏭️ já segue você');
-        this.atualizarOverlay(`@${username} ⏭️ já segue você (${this.perfisSeguidos}/${this.limite})`);
-      } else {
-        btn.click();
-        this.perfisSeguidos++;
-        this.addLog(username);
-
-        if (this.curtirFoto) {
-          this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
-          const result = await this.requestLike(username);
-          if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
-          else { this.likesSkip++; this.addLog(username, '⏭️'); }
-        } else {
-          this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
-        }
+      if (t === 'seguir de volta' || t === 'follow back') {
+        const username = await this.extractUsernameFromFollowButton(btn);
+        this.addLog(username, '⏭️ já segue (seguir de volta)');
+        this.atualizarOverlay(`@${username} ⏭️ já segue (seguir de volta) (${this.perfisSeguidos}/${this.limite})`);
+        modalInterno.scrollTop += 70;
+        acted = true;
+        break;
       }
 
-      modalInterno.scrollTop += 70;
-    } else {
+      if (t === 'seguir' || t === 'follow') {
+        const username = await this.extractUsernameFromFollowButton(btn);
+        const check = await this.requestCheckFollows(username);
+        if (check === 'FOLLOWS_YOU') {
+          this.addLog(username, '⏭️ já segue você');
+          this.atualizarOverlay(`@${username} ⏭️ já segue você (${this.perfisSeguidos}/${this.limite})`);
+        } else {
+          btn.click();
+          this.perfisSeguidos++;
+          this.addLog(username);
+
+          if (this.curtirFoto) {
+            this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
+            const result = await this.requestLike(username);
+            if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
+            else { this.likesSkip++; this.addLog(username, '⏭️'); }
+          } else {
+            this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
+          }
+        }
+
+        modalInterno.scrollTop += 70;
+        acted = true;
+        break;
+      }
+    }
+
+    if (!acted) {
 
       this.atualizarOverlay('Rolando modal...');
       const prevScroll = modalInterno.scrollTop;
