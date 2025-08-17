@@ -11,7 +11,9 @@
     }
     return null;
   };
-  const send = (type, reason) => { try { chrome.runtime.sendMessage(reason ? { type, reason } : { type }); } catch(_) {} };
+  const send = (result, reason) => {
+    try { chrome.runtime.sendMessage(reason ? { type: 'LIKE_RESULT', result, reason } : { type: 'LIKE_RESULT', result }); } catch(_) {}
+  };
 
   // Fecha popups/overlays que podem bloquear clique
   const closeOverlays = () => {
@@ -108,13 +110,13 @@
 
     if (document.visibilityState !== 'visible') {
       log('not visible → skip');
-      return send('LIKE_SKIP', 'not_visible');
+      return send('SKIP', 'not_visible');
     }
 
     const txt = (document.body.innerText || '').toLowerCase();
     if (txt.includes('esta conta é privada') || txt.includes('conta privada') || txt.includes('this account is private')) {
       log('private → skip');
-      return send('LIKE_SKIP', 'private');
+      return send('SKIP', 'private');
     }
 
     // 1) achar post e navegar (se estiver no perfil)
@@ -134,7 +136,7 @@
         }
       }
     }
-    if (!anchor) { log('no post link'); return send('LIKE_SKIP', 'no_post'); }
+    if (!anchor) { log('no post link'); return send('SKIP', 'no_post'); }
 
     if (!(/\/p\/|\/reel\//.test(location.pathname))) {
       const url = new URL(anchor.getAttribute('href'), location.origin).href;
@@ -150,16 +152,16 @@
     let btn = await waitFor(findLikeBtn, { timeout: 7000, interval: 150 });
     log('like btn?', !!btn, 'pressed:', btn?.getAttribute('aria-pressed') || null, 'label:', btn?.getAttribute('aria-label') || btn?.querySelector('svg')?.getAttribute('aria-label') || null);
 
-    if (isLiked(btn)) { log('already liked'); return send('LIKE_DONE'); }
+    if (isLiked(btn)) { log('already liked'); return send('DONE'); }
 
     if (btn) {
       await robustClick(btn);
-      if (await confirmLiked(btn)) { log('liked by button'); return send('LIKE_DONE'); }
+        if (await confirmLiked(btn)) { log('liked by button'); return send('DONE'); }
 
       const svg = btn.querySelector('svg');
       if (svg) {
         await robustClick(svg);
-        if (await confirmLiked(btn)) { log('liked by svg'); return send('LIKE_DONE'); }
+        if (await confirmLiked(btn)) { log('liked by svg'); return send('DONE'); }
       }
     }
 
@@ -169,7 +171,7 @@
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key:'l', bubbles:true }));
     await sleep(600);
     btn = findLikeBtn();
-    if (await confirmLiked(btn)) { log('liked by key L'); return send('LIKE_DONE'); }
+    if (await confirmLiked(btn)) { log('liked by key L'); return send('DONE'); }
 
     // 4) double-tap
     const media = document.querySelector('article img, article video');
@@ -180,14 +182,14 @@
       media.dispatchEvent(ev('click')); await sleep(80);
       media.dispatchEvent(ev('click')); await sleep(700);
       btn = findLikeBtn();
-      if (await confirmLiked(btn)) { log('liked by double tap'); return send('LIKE_DONE'); }
+      if (await confirmLiked(btn)) { log('liked by double tap'); return send('DONE'); }
     }
 
     log('state not changed → skip');
-    send('LIKE_SKIP', 'state_not_changed');
+    send('SKIP', 'state_not_changed');
   } catch (e) {
     log('error', e?.message);
-    send('LIKE_SKIP', 'error');
+    send('ERROR', 'error');
   }
 })();
 

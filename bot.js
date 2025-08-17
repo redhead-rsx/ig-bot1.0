@@ -14,6 +14,7 @@ class Bot {
     this.followGateOpen = true;
     this.currentJobId = 0;
     this.nextActionTimer = null;
+    this.logCounter = 0;
   }
 
   criarOverlays() {
@@ -74,9 +75,11 @@ class Bot {
 
   addLog(username, badge = '') {
     if (!this.logOverlay) return;
+    this.logCounter += 1;
     const line = badge ? `@${username} ${badge}\n` : `@${username}\n`;
     this.logOverlay.textContent += line;
     this.logOverlay.scrollTop = this.logOverlay.scrollHeight;
+    try { console.log(`[LOG ${this.logCounter}] @${username} ${badge}`); } catch (_) {}
   }
 
   getRandomDelay() {
@@ -143,7 +146,11 @@ class Bot {
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ type: 'FOLLOW_REQUEST', username, wantLike }, (resp) => {
-          resolve(resp || { result: 'ERROR' });
+          if (chrome.runtime.lastError) {
+            resolve({ result: 'ERROR' });
+          } else {
+            resolve(resp || { result: 'ERROR' });
+          }
         });
       } catch (e) {
         resolve({ result: 'ERROR' });
@@ -206,11 +213,11 @@ class Bot {
           }
         } else if (result === 'FOLLOW_REQUESTED') {
           this.perfisSeguidos++;
-          this.addLog(username, 'solicitado');
-          this.atualizarOverlay(`@${username} solicitado (${this.perfisSeguidos}/${this.limite})`);
+          this.addLog(username, '📨');
+          this.atualizarOverlay(`@${username} 📨 solicitado (${this.perfisSeguidos}/${this.limite})`);
         } else if (result === 'NO_FOLLOW_BUTTON' || result === 'SKIP_NO_ACTION' || result === 'ERROR') {
-          this.addLog(username, '⏭️/erro');
-          this.atualizarOverlay(`@${username} ⏭️/erro (${this.perfisSeguidos}/${this.limite})`);
+          this.addLog(username, '⚠️');
+          this.atualizarOverlay(`@${username} ⚠️ erro (${this.perfisSeguidos}/${this.limite})`);
         } else {
           this.addLog(username, '⏭️');
           this.atualizarOverlay(`@${username} ⏭️ (${this.perfisSeguidos}/${this.limite})`);

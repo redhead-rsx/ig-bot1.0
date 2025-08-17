@@ -181,9 +181,13 @@
 
     if (!header) {
       const finalDecision = 'NO_FOLLOW_BUTTON';
-      log('', 'none', false, finalDecision, 'no_header');
-      try { chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm: '', primaryState: 'none', secondaryBadge: false, finalDecision, via: 'no_header' }); } catch {}
-      return send({ result: finalDecision, decision: finalDecision, via: 'no_header' });
+      const primaryTextNorm = '';
+      const primaryState = 'none';
+      const secondaryBadge = false;
+      const via = 'no_header';
+      log(`primaryTextNorm="${primaryTextNorm}",`, `primaryState=${primaryState},`, `secondaryBadge=${secondaryBadge},`, `finalDecision=${finalDecision},`, `via=${via}`);
+      try { chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm, primaryState, secondaryBadge, finalDecision, via }); } catch {}
+      return send({ result: finalDecision, decision: finalDecision, via });
     }
 
     const candidates = Array.from(
@@ -213,18 +217,14 @@
 
     if (!primaryBtn) {
       const finalDecision = 'NO_FOLLOW_BUTTON';
-      log(primaryTextNorm, 'none', false, finalDecision, 'no_primary_button');
+      const primaryState = 'none';
+      const secondaryBadge = false;
+      const via = 'no_primary_button';
+      log(`primaryTextNorm="${primaryTextNorm}",`, `primaryState=${primaryState},`, `secondaryBadge=${secondaryBadge},`, `finalDecision=${finalDecision},`, `via=${via}`);
       try {
-        chrome.runtime.sendMessage({
-          type: 'FOLLOW_DEBUG',
-          primaryTextNorm,
-          primaryState: 'none',
-          secondaryBadge: false,
-          finalDecision,
-          via: 'no_primary_button'
-        });
+        chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm, primaryState, secondaryBadge, finalDecision, via });
       } catch {}
-      return send({ result: finalDecision, decision: finalDecision, via: 'no_primary_button' });
+      return send({ result: finalDecision, decision: finalDecision, via });
     }
 
     let primaryState = 'none';
@@ -245,7 +245,7 @@
 
     let finalDecision = '', via = '';
     const sendDebug = () => {
-      log(primaryTextNorm, primaryState, secondaryBadge, finalDecision, via);
+      log(`primaryTextNorm="${primaryTextNorm}",`, `primaryState=${primaryState},`, `secondaryBadge=${secondaryBadge},`, `finalDecision=${finalDecision},`, `via=${via}`);
       try {
         chrome.runtime.sendMessage({ type: 'FOLLOW_DEBUG', primaryTextNorm, primaryState, secondaryBadge, finalDecision, via });
       } catch {}
