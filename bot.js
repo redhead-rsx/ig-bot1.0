@@ -1,3 +1,30 @@
+const normalize = (s) => (s || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/\p{Diacritic}/gu, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const getFollowersContext = () => {
+  const modal = document.querySelector('div[role="dialog"]');
+  if (modal) {
+    const scroller = [...modal.querySelectorAll('div')].find(d => d.scrollHeight > d.clientHeight) || modal;
+    return { container: modal, scroller, type: 'modal' };
+  }
+  if (/\/followers\/?$/.test(location.pathname)) {
+    const main = document.querySelector('main') || document.body;
+    const candidate = [...main.querySelectorAll('section, div')].find(el => {
+      const btns = el.querySelectorAll('button, [role="button"]');
+      if (btns.length < 5) return false;
+      const txts = [...btns].map(b => normalize(b.innerText));
+      return txts.some(t => t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back');
+    }) || main;
+    const scroller = [...candidate.querySelectorAll('div')].find(d => d.scrollHeight > d.clientHeight) || document.scrollingElement || document.documentElement;
+    return { container: candidate, scroller, type: 'page' };
+  }
+  return null;
+};
+
 class Bot {
   constructor() {
     this.rodando = false;
@@ -15,6 +42,7 @@ class Bot {
     this.currentJobId = 0;
     this.nextActionTimer = null;
     this.logCounter = 0;
+    this.dialogObserver = null;
   }
 
   criarOverlays() {
@@ -163,26 +191,37 @@ class Bot {
     const jobId = ++this.currentJobId;
     if (this.nextActionTimer) { clearTimeout(this.nextActionTimer); this.nextActionTimer = null; }
     clearInterval(this.countdownInterval);
-
-    const modal = document.querySelector('div[role="dialog"]');
-    if (!modal) {
-      this.atualizarOverlay('Abra o modal de seguidores');
+    const ctx = getFollowersContext();
+    if (!ctx) {
+      this.atualizarOverlay('Abra o modal de seguidores ou vá para /followers/');
+      if (!this.dialogObserver) {
+        this.dialogObserver = new MutationObserver(() => {
+          const c = getFollowersContext();
+          if (c) {
+            try { this.dialogObserver.disconnect(); } catch {}
+            this.dialogObserver = null;
+            this.seguirProximoUsuario();
+          }
+        });
+        try { this.dialogObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
+      }
       this.nextActionTimer = setTimeout(() => { this.nextActionTimer = null; this.seguirProximoUsuario(); }, 1000);
       return;
     }
-
-    const modalInterno = this.encontrarModalInterno(modal);
-    if (!modalInterno) {
-      this.atualizarOverlay('Não encontrou a div interna scrollável');
-      this.nextActionTimer = setTimeout(() => { this.nextActionTimer = null; this.seguirProximoUsuario(); }, 1000);
-      return;
+    if (this.dialogObserver) {
+      try { this.dialogObserver.disconnect(); } catch {}
+      this.dialogObserver = null;
     }
+    const modalInterno = ctx.scroller;
 
     let acted = false;
-    const buttons = Array.from(modalInterno.querySelectorAll('button'));
+    const buttons = Array.from(modalInterno.querySelectorAll('button, [role="button"]'));
     for (const btn of buttons) {
-      const t = (btn.innerText || '').trim().toLowerCase();
-      if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
+      const t = normalize(btn.innerText);
+      if (t === 'seguir de volta' || t === 'follow back') {
+        continue;
+      }
+      if (t === 'seguir' || t === 'follow') {
         const username = await this.extractUsernameFromFollowButton(btn);
         if (!username || username === 'desconhecido') {
           this.addLog('desconhecido', '⚠️');
@@ -230,7 +269,11 @@ class Bot {
           this.atualizarOverlay(`@${user} ⏭️ (${this.perfisSeguidos}/${this.limite})`);
         }
         this.followGateOpen = true;
-        modalInterno.scrollTop += 70;
+        if (modalInterno === document.scrollingElement || modalInterno === document.documentElement || modalInterno === document.body) {
+          window.scrollBy(0, 70);
+        } else {
+          modalInterno.scrollTop += 70;
+        }
         acted = true;
         break;
       }
@@ -238,11 +281,13 @@ class Bot {
 
     if (!acted) {
       this.atualizarOverlay('Rolando modal...');
-      const prevScroll = modalInterno.scrollTop;
-      modalInterno.scrollTop += 60;
+      const useWindow = (modalInterno === document.scrollingElement || modalInterno === document.documentElement || modalInterno === document.body);
+      const prevScroll = useWindow ? window.scrollY : modalInterno.scrollTop;
+      if (useWindow) { window.scrollBy(0, 60); } else { modalInterno.scrollTop += 60; }
       this.nextActionTimer = setTimeout(() => {
         this.nextActionTimer = null;
-        if (modalInterno.scrollTop === prevScroll) {
+        const curr = useWindow ? window.scrollY : modalInterno.scrollTop;
+        if (curr === prevScroll) {
           this.atualizarOverlay(`Fim do modal ou todos os perfis carregados (${this.perfisSeguidos}/${this.limite})`);
           this.rodando = false;
           clearInterval(this.countdownInterval);
@@ -290,6 +335,10 @@ class Bot {
     clearInterval(this.countdownInterval);
     clearTimeout(this.nextActionTimer);
     this.nextActionTimer = null;
+    if (this.dialogObserver) {
+      try { this.dialogObserver.disconnect(); } catch {}
+      this.dialogObserver = null;
+    }
   }
 }
 

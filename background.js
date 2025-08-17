@@ -9,28 +9,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'BOT_START') {
     const opts = msg.options || {};
-    const initBot = (tabId) => {
+    const initOn = (tabId) => {
       igTabId = tabId;
-      chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, () => {
-        sendResponse({ ok: true });
+      // handshake first
+      chrome.tabs.sendMessage(tabId, { type: 'PING' }, () => {
+        chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, (resp) => {
+          if (chrome.runtime.lastError || !resp?.ok) {
+            // inject scripts then retry
+            chrome.scripting.executeScript({ target: { tabId }, files: ['bot.js'], world: 'ISOLATED' }, () => {
+              chrome.scripting.executeScript({ target: { tabId }, files: ['contentscript.js'], world: 'ISOLATED' }, () => {
+                setTimeout(() => {
+                  chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, () => {
+                    sendResponse({ ok: !chrome.runtime.lastError });
+                  });
+                }, 150);
+              });
+            });
+          } else {
+            sendResponse({ ok: true });
+          }
+        });
       });
     };
-    chrome.tabs.query({ url: 'https://www.instagram.com/*', currentWindow: true }, (tabs) => {
-      if (tabs && tabs.length) {
-        const tab = tabs[0];
-        chrome.tabs.update(tab.id, { active: true }, () => initBot(tab.id));
-      } else {
-        chrome.tabs.create({ url: 'https://www.instagram.com/', active: true }, (tab) => {
-          if (!tab) return sendResponse({ ok: false });
-          const listener = (id, info) => {
-            if (id === tab.id && info.status === 'complete') {
-              chrome.tabs.onUpdated.removeListener(listener);
-              initBot(tab.id);
-            }
-          };
-          chrome.tabs.onUpdated.addListener(listener);
-        });
-      }
+
+    const pick = (ts) => (ts && ts.length ? ts[0] : null);
+    chrome.tabs.query({ url: 'https://www.instagram.com/*', active: true, currentWindow: true }, (activeTabs) => {
+      const useTab = pick(activeTabs);
+      if (useTab) return initOn(useTab.id);
+      chrome.tabs.query({ url: 'https://www.instagram.com/*' }, (tabs) => {
+        const t = pick(tabs);
+        if (t) {
+          chrome.tabs.update(t.id, { active: true }, () => initOn(t.id));
+        } else {
+          chrome.tabs.create({ url: 'https://www.instagram.com/', active: true }, (tab) => {
+            if (!tab) return sendResponse({ ok: false });
+            const onUpd = (id, info) => {
+              if (id === tab.id && info.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(onUpd);
+                initOn(id);
+              }
+            };
+            chrome.tabs.onUpdated.addListener(onUpd);
+          });
+        }
+      });
     });
     return true;
   }
@@ -137,7 +159,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const onUpdated = (id, info) => { if (id === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(onUpdated); inject(1); } };
     const onRemoved = (id) => { if (id === tabId) finalize({ result: 'ERROR', reason: 'tab_closed' }); };
 
-    timer = setTimeout(() => finalize({ result: 'ERROR', reason: 'timeout' }), 20000);
+    timer = setTimeout(() => finalize({ result: 'ERROR', reason: 'timeout' }), 45000);
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       prevTabId = tabs?.[0]?.id ?? null;
