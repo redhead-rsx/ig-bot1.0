@@ -42,32 +42,44 @@
       return send('SKIP', 'not_visible');
     }
 
-    const normalize = (s) => (s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
-    const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+    const normalize = (s) => (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const regions = [];
+    const main = document.querySelector('main');
+    if (main) {
+      regions.push(main);
+      const header = main.querySelector('header');
+      if (header) regions.push(header);
+    } else {
+      regions.push(document);
+    }
+    let btns = [];
+    for (const r of regions) {
+      btns = btns.concat(Array.from(r.querySelectorAll('button, [role="button"], a')));
+    }
     for (const b of btns) {
       const t = normalize(b.innerText);
       const aria = normalize(b.getAttribute('aria-label'));
       const combo = `${t} ${aria}`;
       if (combo.includes('seguir de volta') || combo.includes('follow back')) {
         log('follow back button');
-        return send('FOLLOWS_YOU');
+        return send('FOLLOWS_YOU', 'follow_back_button');
       }
     }
 
-    const areas = [];
-    const main = document.querySelector('main');
-    if (main) {
-      areas.push(main);
-      const header = main.querySelector('header');
-      if (header) areas.push(header);
-    }
-    const text = areas.map(el => (el.innerText || '')).join(' ').trim().toLowerCase().replace(/\s+/g, ' ');
+    const text = regions.map(el => normalize(el.innerText)).join(' ');
     if (!text) {
       log('no indicator text');
       return send('SKIP', 'no_indicator');
     }
 
-    const tokens = ['segue você','segue voce','follows you','te segue','segue-te'];
+    const tokens = ['segue voce','follows you','te segue','segue te'];
     if (tokens.some(t => text.includes(t))) {
       log('follows you');
       return send('FOLLOWS_YOU');

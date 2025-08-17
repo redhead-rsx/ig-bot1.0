@@ -16,10 +16,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     const finalize = (result, reason) => {
       if (done) return; done = true; cleanup();
-      if (reason) log('finalize', result, reason);
+      if (reason) log('finalize', result, reason); else log('finalize', result);
       const finish = () => {
-        if (prevTabId != null) chrome.tabs.update(prevTabId, { active: true }, () => sendResponse({ result }));
-        else sendResponse({ result });
+        const payload = reason ? { result, reason } : { result };
+        if (prevTabId != null) chrome.tabs.update(prevTabId, { active: true }, () => sendResponse(payload));
+        else sendResponse(payload);
       };
       if (tabId != null) chrome.tabs.remove(tabId, () => finish()); else finish();
     };
@@ -41,7 +42,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (res?.type === 'CHECK_RESULT') {
         // FOLLOWS_YOU cobre tanto "Segue você" quanto o botão "Seguir de volta"
         if (res.result === 'FOLLOWS_YOU' || res.result === 'NOT_FOLLOWING') {
-          finalize(res.result);
+          finalize(res.result, res.reason);
         } else if (!secondTry && res.reason === 'not_visible') {
           secondTry = true;
           chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
