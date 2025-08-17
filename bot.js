@@ -139,28 +139,14 @@ class Bot {
     return 'desconhecido';
   }
 
-  requestLike(username) {
+  requestFollow(username, wantLike) {
     return new Promise((resolve) => {
       try {
-        chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
-          resolve(resp && resp.result);
+        chrome.runtime.sendMessage({ type: 'FOLLOW_REQUEST', username, wantLike }, (resp) => {
+          resolve(resp || { result: 'ERROR' });
         });
       } catch (e) {
-        resolve('LIKE_SKIP');
-      }
-    });
-  }
-
-
-  requestCheckFollows(username) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({ type: 'CHECK_FOLLOWS_ME', username }, (resp) => {
-          if (resp) resolve(resp);
-          else resolve({ result: 'SKIP' });
-        });
-      } catch (e) {
-        resolve({ result: 'SKIP' });
+        resolve({ result: 'ERROR' });
       }
     });
   }
@@ -191,37 +177,42 @@ class Bot {
       const t = (btn.innerText || '').trim().toLowerCase();
       if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
         const username = await this.extractUsernameFromFollowButton(btn);
-        console.log(`[BOT] check start @${username} job=${jobId}`);
+        console.log(`[BOT] follow start @${username} job=${jobId}`);
         this.followGateOpen = false;
-        const { result: check, via } = await this.requestCheckFollows(username);
+        const resp = await this.requestFollow(username, this.curtirFoto);
         if (jobId !== this.currentJobId) {
           console.log('[BOT] stale job, ignoring');
           this.followGateOpen = true;
           return;
         }
-        console.log(`[BOT] check result=${check}${via ? ' via=' + via : ''} job=${jobId}`);
-        if (check === 'FOLLOWS_YOU') {
-          const msg = via === 'follow_back_button' ? '⏭️ já segue (seguir de volta)' : '⏭️ já segue você';
-          this.addLog(username, msg);
-          this.atualizarOverlay(`@${username} ${msg} (${this.perfisSeguidos}/${this.limite})`);
-          this.followGateOpen = true;
-        } else {
-          this.followGateOpen = true;
-          console.log(`[BOT] follow gate OPEN job=${jobId}`);
-          btn.click();
+        const result = resp.result;
+        console.log(`[BOT] follow result=${result} job=${jobId}`);
+        if (result === 'ALREADY_FOLLOWS') {
+          this.addLog(username, '⏭️ já segue');
+          this.atualizarOverlay(`@${username} ⏭️ já segue (${this.perfisSeguidos}/${this.limite})`);
+        } else if (result === 'FOLLOW_DONE') {
           this.perfisSeguidos++;
-          this.addLog(username);
-
-          if (this.curtirFoto && jobId === this.currentJobId) {
-            this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
-            const result = await this.requestLike(username);
-            if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
-            else { this.likesSkip++; this.addLog(username, '⏭️'); }
+          if (resp.like === 'DONE') {
+            this.likesOk++;
+            this.addLog(username, '♥️');
+            this.atualizarOverlay(`@${username} seguido ♥️ (${this.perfisSeguidos}/${this.limite})`);
+          } else if (resp.like === 'SKIP') {
+            this.likesSkip++;
+            this.addLog(username, '⏭️');
+            this.atualizarOverlay(`@${username} seguido ⏭️ (${this.perfisSeguidos}/${this.limite})`);
           } else {
-            this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
+            this.addLog(username);
+            this.atualizarOverlay(`@${username} seguido (${this.perfisSeguidos}/${this.limite})`);
           }
+        } else if (result === 'FOLLOW_REQUESTED') {
+          this.perfisSeguidos++;
+          this.addLog(username, 'solicitado');
+          this.atualizarOverlay(`@${username} solicitado (${this.perfisSeguidos}/${this.limite})`);
+        } else {
+          this.addLog(username, '⏭️');
+          this.atualizarOverlay(`@${username} ⏭️ (${this.perfisSeguidos}/${this.limite})`);
         }
-
+        this.followGateOpen = true;
         modalInterno.scrollTop += 70;
         acted = true;
         break;
