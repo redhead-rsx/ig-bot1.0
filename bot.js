@@ -184,9 +184,10 @@ class Bot {
       const t = (btn.innerText || '').trim().toLowerCase();
       if (t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back') {
         const username = await this.extractUsernameFromFollowButton(btn);
-        console.log(`[BOT] follow start @${username} job=${jobId}`);
+        const user = username;
+        console.log(`[BOT] follow start @${user} job=${jobId}`);
         this.followGateOpen = false;
-        const resp = await this.requestFollow(username, this.curtirFoto);
+        const resp = await this.requestFollow(user, this.curtirFoto);
         if (jobId !== this.currentJobId) {
           console.log('[BOT] stale job, ignoring');
           this.followGateOpen = true;
@@ -195,32 +196,32 @@ class Bot {
         const result = resp.result;
         console.log(`[BOT] follow result=${result} job=${jobId}`);
         if (result === 'ALREADY_FOLLOWS' || result === 'ALREADY_FOLLOWING') {
-          this.addLog(username, '⏭️ já segue');
-          this.atualizarOverlay(`@${username} ⏭️ já segue (${this.perfisSeguidos}/${this.limite})`);
+          this.addLog(user, '⏭️ já segue');
+          this.atualizarOverlay(`@${user} ⏭️ já segue (${this.perfisSeguidos}/${this.limite})`);
         } else if (result === 'FOLLOW_DONE') {
           this.perfisSeguidos++;
           if (resp.like === 'DONE') {
             this.likesOk++;
-            this.addLog(username, '♥️');
-            this.atualizarOverlay(`@${username} seguido ♥️ (${this.perfisSeguidos}/${this.limite})`);
+            this.addLog(user, '♥️');
+            this.atualizarOverlay(`@${user} seguido ♥️ (${this.perfisSeguidos}/${this.limite})`);
           } else if (resp.like === 'SKIP') {
             this.likesSkip++;
-            this.addLog(username, '⏭️');
-            this.atualizarOverlay(`@${username} seguido ⏭️ (${this.perfisSeguidos}/${this.limite})`);
+            this.addLog(user, '⏭️');
+            this.atualizarOverlay(`@${user} seguido ⏭️ (${this.perfisSeguidos}/${this.limite})`);
           } else {
-            this.addLog(username);
-            this.atualizarOverlay(`@${username} seguido (${this.perfisSeguidos}/${this.limite})`);
+            this.addLog(user);
+            this.atualizarOverlay(`@${user} seguido (${this.perfisSeguidos}/${this.limite})`);
           }
         } else if (result === 'FOLLOW_REQUESTED') {
           this.perfisSeguidos++;
-          this.addLog(username, '📨');
-          this.atualizarOverlay(`@${username} 📨 solicitado (${this.perfisSeguidos}/${this.limite})`);
+          this.addLog(user, '📨');
+          this.atualizarOverlay(`@${user} 📨 solicitado (${this.perfisSeguidos}/${this.limite})`);
         } else if (result === 'NO_FOLLOW_BUTTON' || result === 'SKIP_NO_ACTION' || result === 'ERROR') {
-          this.addLog(username, '⚠️');
-          this.atualizarOverlay(`@${username} ⚠️ erro (${this.perfisSeguidos}/${this.limite})`);
+          this.addLog(user, '⚠️');
+          this.atualizarOverlay(`@${user} ⚠️ erro (${this.perfisSeguidos}/${this.limite})`);
         } else {
-          this.addLog(username, '⏭️');
-          this.atualizarOverlay(`@${username} ⏭️ (${this.perfisSeguidos}/${this.limite})`);
+          this.addLog(user, '⏭️');
+          this.atualizarOverlay(`@${user} ⏭️ (${this.perfisSeguidos}/${this.limite})`);
         }
         this.followGateOpen = true;
         modalInterno.scrollTop += 70;
@@ -270,6 +271,10 @@ class Bot {
     this.minDelay = Math.min(min, max) * 1000;
     this.maxDelay = Math.max(min, max) * 1000;
     this.criarOverlays();
+    if (this.logOverlay) {
+      this.logOverlay.textContent = '';
+      this.logCounter = 0;
+    }
     this.seguirProximoUsuario();
   }
 
