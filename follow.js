@@ -164,77 +164,84 @@
     await waitFor(() => document.readyState === 'complete', { timeout: 8000, interval: 100 });
     closeOverlays();
     if (document.visibilityState !== 'visible') return send({ result: 'need_focus' });
-    const header = document.querySelector('main > header') || document.querySelector('header');
+    const header = await waitFor(() =>
+      document.querySelector('main > header') ||
+      document.querySelector('main header') ||
+      document.querySelector('header'),
+      { timeout: 6000, interval: 150 }
+    );
+
+    const isVisible = (el) => {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+
     if (!header) {
-      log('matched=no_header');
-      return send({ result: 'NO_FOLLOW_BUTTON' });
+      const finalDecision = 'NO_FOLLOW_BUTTON';
+      log('decision', { primaryTextNorm: '', primaryState: 'none', secondaryBadge: false, finalDecision });
+      return send({ result: finalDecision, decision: finalDecision, via: 'no_header' });
     }
 
-    const btns = Array.from(header.querySelectorAll('button, [role="button"], a[role="button"]'));
-    const comboText = (el) => normalize((el.innerText || '') + ' ' + (el.getAttribute('aria-label') || ''));
-    const texts = Array.from(header.querySelectorAll('*'))
-      .map(el => normalize(el.innerText))
-      .filter(t => t && t.length <= 32);
+    const candidates = Array.from(header.querySelectorAll('button, [role="button"], a[role="button"]')).filter(isVisible);
+    const primaryBtn = candidates[0];
+    const getPrimaryText = () => normalize((primaryBtn?.innerText || '') + ' ' + (primaryBtn?.getAttribute('aria-label') || ''));
+    const primaryTextNorm = getPrimaryText();
 
-    const isFollowBack = (t) => /\bseguir\b\s+\bde\b\s+\bvolta\b/.test(t) || /\bfollow\b\s+\bback\b/.test(t);
-    const isFollowing = (t) => /\bseguindo\b|\bfollowing\b/.test(t);
-    const isRequested = (t) => /\bsolicitado\b|\brequested\b/.test(t);
-    const isFollowOnly = (t) => ((/\bseguir\b/.test(t) || /\bfollow\b/.test(t)) && !isFollowBack(t) && !isFollowing(t) && !isRequested(t));
+    let primaryState = 'none';
+    if (primaryTextNorm === 'seguir de volta' || primaryTextNorm === 'follow back') primaryState = 'follow_back';
+    else if (primaryTextNorm === 'seguir' || primaryTextNorm === 'follow') primaryState = 'follow';
+    else if (primaryTextNorm === 'seguindo' || primaryTextNorm === 'following') primaryState = 'following';
+    else if (primaryTextNorm === 'solicitado' || primaryTextNorm === 'requested') primaryState = 'requested';
 
-    const followBackBtn = btns.find(b => isFollowBack(comboText(b)));
-    if (followBackBtn) {
-      log('matched=follow_back_button', followBackBtn, comboText(followBackBtn).slice(0,40));
-      return send({ result: 'ALREADY_FOLLOWS' });
+    let secondaryBadge = false;
+    if (primaryState === 'follow') {
+      const texts = Array.from(header.querySelectorAll('*'))
+        .filter(el => el !== primaryBtn && !primaryBtn.contains(el))
+        .map(el => normalize(el.innerText))
+        .filter(t => t && t.length <= 32);
+      const followsYouTokens = ['segue voce', 'follows you', 'te segue', 'segue te'];
+      secondaryBadge = texts.some(t => followsYouTokens.some(tok => new RegExp(`\\b${tok}\\b`).test(t)));
     }
 
-    const followsYouTokens = ['segue voce', 'follows you', 'te segue', 'segue te'];
-    const followsYou = texts.find(t => followsYouTokens.some(tok => new RegExp(`\\b${tok}\\b`).test(t)));
-    if (followsYou) {
-      log('matched=follows_you_text', followsYou.slice(0,40));
-      return send({ result: 'ALREADY_FOLLOWS' });
-    }
+    let finalDecision, via;
+    if (primaryState === 'follow_back') { finalDecision = 'ALREADY_FOLLOWS'; via = 'primary_follow_back'; }
+    else if (primaryState === 'following') { finalDecision = 'ALREADY_FOLLOWING'; via = 'primary_following'; }
+    else if (primaryState === 'requested') { finalDecision = 'FOLLOW_REQUESTED'; via = 'primary_requested'; }
+    else if (primaryState === 'follow') {
+      if (secondaryBadge) { finalDecision = 'ALREADY_FOLLOWS'; via = 'secondary_follows_you'; }
+      else { finalDecision = 'CAN_FOLLOW'; via = 'primary_follow'; }
+    } else { finalDecision = 'NO_FOLLOW_BUTTON'; via = 'no_primary_match'; }
 
-    const alreadyBtn = btns.find(b => isFollowing(comboText(b)));
-    if (alreadyBtn) {
-      log('matched=already_following', alreadyBtn, comboText(alreadyBtn).slice(0,40));
-      return send({ result: 'ALREADY_FOLLOWING' });
-    }
+    log('decision', { primaryTextNorm, primaryState, secondaryBadge, finalDecision });
 
-    const requestedBtn = btns.find(b => isRequested(comboText(b)));
-    if (requestedBtn) {
-      log('matched=requested', requestedBtn, comboText(requestedBtn).slice(0,40));
-      return send({ result: 'FOLLOW_REQUESTED' });
-    }
+    if (finalDecision === 'ALREADY_FOLLOWS') return send({ result: 'ALREADY_FOLLOWS', decision: finalDecision, via });
+    if (finalDecision === 'ALREADY_FOLLOWING') return send({ result: 'ALREADY_FOLLOWING', decision: finalDecision, via });
+    if (finalDecision === 'FOLLOW_REQUESTED') return send({ result: 'FOLLOW_REQUESTED', decision: finalDecision, via });
+    if (finalDecision === 'NO_FOLLOW_BUTTON') return send({ result: 'NO_FOLLOW_BUTTON', decision: finalDecision, via });
 
-    const followBtn = btns.find(b => isFollowOnly(comboText(b)));
-    if (!followBtn) {
-      log('matched=no_follow_button');
-      return send({ result: 'NO_FOLLOW_BUTTON' });
-    }
-
-    log('matched=follow_only', followBtn, comboText(followBtn).slice(0,40));
-
-    await robustClick(followBtn);
+    await robustClick(primaryBtn);
     const state = await waitFor(() => {
-      const t = comboText(followBtn);
-      if (isFollowing(t)) return 'FOLLOW_DONE';
-      if (isRequested(t)) return 'FOLLOW_REQUESTED';
+      const t = getPrimaryText();
+      if (t === 'seguindo' || t === 'following') return 'FOLLOW_DONE';
+      if (t === 'solicitado' || t === 'requested') return 'FOLLOW_REQUESTED';
       return null;
     }, { timeout: 5000, interval: 200 });
-    if (!state) return send({ result: 'SKIP_NO_ACTION' });
+    if (!state) return send({ result: 'SKIP_NO_ACTION', decision: finalDecision, via });
 
     if (state === 'FOLLOW_DONE') {
       if (wantLike) {
         const likeRes = await likeFirstPost();
-        return send({ result: 'FOLLOW_DONE', ...likeRes });
+        return send({ result: 'FOLLOW_DONE', decision: finalDecision, via, ...likeRes });
       }
-      return send({ result: 'FOLLOW_DONE' });
+      return send({ result: 'FOLLOW_DONE', decision: finalDecision, via });
     }
     if (state === 'FOLLOW_REQUESTED') {
-      return send({ result: 'FOLLOW_REQUESTED' });
+      return send({ result: 'FOLLOW_REQUESTED', decision: finalDecision, via });
     }
 
-    send({ result: 'SKIP_NO_ACTION' });
+    return send({ result: 'SKIP_NO_ACTION', decision: finalDecision, via });
   } catch (e) {
     send({ result: 'ERROR' });
   }
