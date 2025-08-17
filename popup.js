@@ -38,9 +38,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('curtirFoto').checked = data.curtirFoto !== undefined ? data.curtirFoto : true;
   });
 
-  const setDisabled = (b) => { startBtn.disabled = b; stopBtn.disabled = b; };
+  const enableStart = () => { startBtn.disabled = false; };
+  const disableStart = () => { startBtn.disabled = true; };
+  const enableStop = () => { stopBtn.disabled = false; };
+  const disableStop = () => { stopBtn.disabled = true; };
+
+  disableStop();
+  let isRunning = false;
 
   startBtn.addEventListener('click', () => {
+    if (isRunning) return;
     const opts = {
       limit: parseInt(document.getElementById('quantidade').value) || 10,
       minDelay: parseInt(document.getElementById('minDelay').value) || 120,
@@ -48,17 +55,26 @@ document.addEventListener('DOMContentLoaded', () => {
       wantLike: document.getElementById('curtirFoto').checked
     };
     saveOpts({ limite: opts.limit, minDelay: opts.minDelay, maxDelay: opts.maxDelay, curtirFoto: opts.wantLike });
-    setDisabled(true);
+    disableStart();
+    enableStop();
+    isRunning = true;
     chrome.runtime.sendMessage({ type: 'BOT_START', options: opts }, (resp) => {
-      setDisabled(false);
-      if (resp && resp.ok) statusEl.textContent = 'Rodando';
+      if (!(resp && resp.ok)) {
+        isRunning = false;
+        enableStart();
+        disableStop();
+      } else {
+        statusEl.textContent = 'Rodando';
+      }
     });
   });
 
   stopBtn.addEventListener('click', () => {
-    setDisabled(true);
+    if (!isRunning) return;
+    disableStop();
+    enableStart();
     chrome.runtime.sendMessage({ type: 'BOT_STOP' }, (resp) => {
-      setDisabled(false);
+      isRunning = false;
       statusEl.textContent = 'Parado';
     });
   });
