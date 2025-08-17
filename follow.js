@@ -186,17 +186,46 @@
       return send({ result: finalDecision, decision: finalDecision, via: 'no_header' });
     }
 
-    const candidates = Array.from(header.querySelectorAll('button, [role="button"], a[role="button"]')).filter(isVisible);
-    const candsData = candidates.map(btn => ({
-      btn,
-      text: normalize((btn.innerText || '') + ' ' + (btn.getAttribute('aria-label') || ''))
-    }));
+    const candidates = Array.from(
+      header.querySelectorAll('button, [role="button"], a[role="button"]')
+    ).filter(isVisible);
+
+    const candsData = candidates.map(btn => {
+      const rect = btn.getBoundingClientRect();
+      return {
+        btn,
+        rect,
+        text: normalize((btn.innerText || '') + ' ' + (btn.getAttribute('aria-label') || ''))
+      };
+    });
+
     const keyword = /(seguir|follow|seguindo|following|solicitado|requested)/;
-    const prioritized = candsData.filter(c => keyword.test(c.text));
-    const primary = prioritized[0] || candsData[0] || {};
-    const primaryBtn = primary.btn || null;
+    const withKeyword = candsData.filter(c => keyword.test(c.text));
+
+    const sortByPos = arr => arr.sort((a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left));
+    sortByPos(withKeyword);
+    sortByPos(candsData);
+
+    const primaryData = withKeyword[0] || candsData[0];
+    const primaryBtn = primaryData?.btn || null;
     const getPrimaryText = () => normalize((primaryBtn?.innerText || '') + ' ' + (primaryBtn?.getAttribute('aria-label') || ''));
     const primaryTextNorm = getPrimaryText();
+
+    if (!primaryBtn) {
+      const finalDecision = 'NO_FOLLOW_BUTTON';
+      log(primaryTextNorm, 'none', false, finalDecision, 'no_primary_button');
+      try {
+        chrome.runtime.sendMessage({
+          type: 'FOLLOW_DEBUG',
+          primaryTextNorm,
+          primaryState: 'none',
+          secondaryBadge: false,
+          finalDecision,
+          via: 'no_primary_button'
+        });
+      } catch {}
+      return send({ result: finalDecision, decision: finalDecision, via: 'no_primary_button' });
+    }
 
     let primaryState = 'none';
     if (primaryTextNorm === 'seguir de volta' || primaryTextNorm === 'follow back') primaryState = 'follow_back';
