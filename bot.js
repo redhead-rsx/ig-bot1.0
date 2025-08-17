@@ -282,6 +282,8 @@ class Bot {
     this.rodando = false;
     this.atualizarOverlay('Automação parada');
     clearInterval(this.countdownInterval);
+    clearTimeout(this.nextActionTimer);
+    this.nextActionTimer = null;
   }
 }
 
