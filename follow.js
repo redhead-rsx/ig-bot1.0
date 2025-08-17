@@ -164,49 +164,61 @@
     await waitFor(() => document.readyState === 'complete', { timeout: 8000, interval: 100 });
     closeOverlays();
     if (document.visibilityState !== 'visible') return send({ result: 'need_focus' });
-
-    const regions = [];
-    const main = document.querySelector('main');
-    const header = main?.querySelector('header') || document.querySelector('header');
-    if (header) regions.push(header);
-    if (main) regions.push(main); else regions.push(document);
-
-    let btns = [];
-    for (const r of regions) btns = btns.concat(Array.from(r.querySelectorAll('button, [role="button"], a')));
-
-    for (const b of btns) {
-      const combo = normalize((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || ''));
-      if (combo.includes('seguir de volta') || combo.includes('follow back')) {
-        return send({ result: 'ALREADY_FOLLOWS' });
-      }
+    const header = document.querySelector('main > header') || document.querySelector('header');
+    if (!header) {
+      log('matched=no_header');
+      return send({ result: 'NO_FOLLOW_BUTTON' });
     }
 
-    const text = regions.map(el => normalize(el.innerText)).join(' ');
-    const tokens = ['segue voce','follows you','te segue','segue te'];
-    if (tokens.some(t => text.includes(t))) {
+    const btns = Array.from(header.querySelectorAll('button, [role="button"], a[role="button"]'));
+    const comboText = (el) => normalize((el.innerText || '') + ' ' + (el.getAttribute('aria-label') || ''));
+    const texts = Array.from(header.querySelectorAll('*'))
+      .map(el => normalize(el.innerText))
+      .filter(t => t && t.length <= 32);
+
+    const isFollowBack = (t) => /\bseguir\b\s+\bde\b\s+\bvolta\b/.test(t) || /\bfollow\b\s+\bback\b/.test(t);
+    const isFollowing = (t) => /\bseguindo\b|\bfollowing\b/.test(t);
+    const isRequested = (t) => /\bsolicitado\b|\brequested\b/.test(t);
+    const isFollowOnly = (t) => ((/\bseguir\b/.test(t) || /\bfollow\b/.test(t)) && !isFollowBack(t) && !isFollowing(t) && !isRequested(t));
+
+    const followBackBtn = btns.find(b => isFollowBack(comboText(b)));
+    if (followBackBtn) {
+      log('matched=follow_back_button', followBackBtn, comboText(followBackBtn).slice(0,40));
       return send({ result: 'ALREADY_FOLLOWS' });
     }
 
-    let followBtn = null;
-    for (const b of btns) {
-      const combo = normalize((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || ''));
-      if (combo.includes('seguir') || combo.includes('follow') || combo.includes('seguindo') || combo.includes('following') || combo.includes('solicitado') || combo.includes('requested')) {
-        followBtn = b; break;
-      }
+    const followsYouTokens = ['segue voce', 'follows you', 'te segue', 'segue te'];
+    const followsYou = texts.find(t => followsYouTokens.some(tok => new RegExp(`\\b${tok}\\b`).test(t)));
+    if (followsYou) {
+      log('matched=follows_you_text', followsYou.slice(0,40));
+      return send({ result: 'ALREADY_FOLLOWS' });
     }
-    if (!followBtn) return send({ result: 'SKIP_NO_ACTION' });
 
-    const combo = normalize((followBtn.innerText || '') + ' ' + (followBtn.getAttribute('aria-label') || ''));
-    if (combo.includes('seguindo') || combo.includes('following') || combo.includes('solicitado') || combo.includes('requested')) {
+    const alreadyBtn = btns.find(b => isFollowing(comboText(b)));
+    if (alreadyBtn) {
+      log('matched=already_following', alreadyBtn, comboText(alreadyBtn).slice(0,40));
       return send({ result: 'ALREADY_FOLLOWING' });
     }
-    if (!(combo.includes('seguir') || combo.includes('follow'))) return send({ result: 'SKIP_NO_ACTION' });
+
+    const requestedBtn = btns.find(b => isRequested(comboText(b)));
+    if (requestedBtn) {
+      log('matched=requested', requestedBtn, comboText(requestedBtn).slice(0,40));
+      return send({ result: 'FOLLOW_REQUESTED' });
+    }
+
+    const followBtn = btns.find(b => isFollowOnly(comboText(b)));
+    if (!followBtn) {
+      log('matched=no_follow_button');
+      return send({ result: 'NO_FOLLOW_BUTTON' });
+    }
+
+    log('matched=follow_only', followBtn, comboText(followBtn).slice(0,40));
 
     await robustClick(followBtn);
     const state = await waitFor(() => {
-      const t = normalize(followBtn.innerText);
-      if (t.includes('seguindo') || t.includes('following')) return 'FOLLOW_DONE';
-      if (t.includes('solicitado') || t.includes('requested')) return 'FOLLOW_REQUESTED';
+      const t = comboText(followBtn);
+      if (isFollowing(t)) return 'FOLLOW_DONE';
+      if (isRequested(t)) return 'FOLLOW_REQUESTED';
       return null;
     }, { timeout: 5000, interval: 200 });
     if (!state) return send({ result: 'SKIP_NO_ACTION' });
@@ -215,9 +227,8 @@
       if (wantLike) {
         const likeRes = await likeFirstPost();
         return send({ result: 'FOLLOW_DONE', ...likeRes });
-      } else {
-        return send({ result: 'FOLLOW_DONE' });
       }
+      return send({ result: 'FOLLOW_DONE' });
     }
     if (state === 'FOLLOW_REQUESTED') {
       return send({ result: 'FOLLOW_REQUESTED' });
