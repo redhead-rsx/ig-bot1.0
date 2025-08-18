@@ -1,6 +1,16 @@
 (async () => {
-  const DEBUG = true;
+  let DEBUG = false;
+  try {
+    DEBUG = await new Promise(resolve => {
+      if (chrome?.storage?.local?.get) {
+        chrome.storage.local.get(['debug'], r => resolve(!!r.debug));
+      } else {
+        resolve(false);
+      }
+    });
+  } catch {}
   const log = (...a) => { try { if (DEBUG) console.log('[LIKER]', ...a); } catch(_) {} };
+  try { chrome.runtime?.onMessage?.addListener(msg => { if (msg?.type === 'SET_DEBUG') DEBUG = !!msg.debug; }); } catch {}
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, { timeout = 15000, interval = 150 } = {}) => {
     const t0 = Date.now();
