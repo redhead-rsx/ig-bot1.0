@@ -6,7 +6,7 @@ const normalize = (s) => (s || '')
   .trim();
 
 const getFollowersContext = () => {
-  const modal = document.querySelector('div[role="dialog"]');
+  const modal = document.querySelector('div[role="dialog"], div[aria-modal="true"]');
   if (modal) {
     const scroller = [...modal.querySelectorAll('div')].find(d => d.scrollHeight > d.clientHeight) || modal;
     return { container: modal, scroller, type: 'modal' };
