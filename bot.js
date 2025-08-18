@@ -1,30 +1,3 @@
-const normalize = (s) => (s || '')
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/\p{Diacritic}/gu, '')
-  .replace(/\s+/g, ' ')
-  .trim();
-
-const getFollowersContext = () => {
-  const modal = document.querySelector('div[role="dialog"], div[aria-modal="true"]');
-  if (modal) {
-    const scroller = [...modal.querySelectorAll('div')].find(d => d.scrollHeight > d.clientHeight) || modal;
-    return { container: modal, scroller, type: 'modal' };
-  }
-  if (/\/followers\/?$/.test(location.pathname)) {
-    const main = document.querySelector('main') || document.body;
-    const candidate = [...main.querySelectorAll('section, div')].find(el => {
-      const btns = el.querySelectorAll('button, [role="button"]');
-      if (btns.length < 5) return false;
-      const txts = [...btns].map(b => normalize(b.innerText));
-      return txts.some(t => t === 'seguir' || t === 'follow' || t === 'seguir de volta' || t === 'follow back');
-    }) || main;
-    const scroller = [...candidate.querySelectorAll('div')].find(d => d.scrollHeight > d.clientHeight) || document.scrollingElement || document.documentElement;
-    return { container: candidate, scroller, type: 'page' };
-  }
-  return null;
-};
-
 class Bot {
   constructor() {
     this.rodando = false;
@@ -38,11 +11,6 @@ class Bot {
     this.maxDelay = 180000;
     this.likesOk = 0;
     this.likesSkip = 0;
-    this.followGateOpen = true;
-    this.currentJobId = 0;
-    this.nextActionTimer = null;
-    this.logCounter = 0;
-    this.dialogObserver = null;
   }
 
   criarOverlays() {
@@ -103,11 +71,9 @@ class Bot {
 
   addLog(username, badge = '') {
     if (!this.logOverlay) return;
-    this.logCounter += 1;
     const line = badge ? `@${username} ${badge}\n` : `@${username}\n`;
     this.logOverlay.textContent += line;
     this.logOverlay.scrollTop = this.logOverlay.scrollHeight;
-    try { console.log(`[LOG ${this.logCounter}] @${username} ${badge}`); } catch (_) {}
   }
 
   getRandomDelay() {
@@ -170,124 +136,62 @@ class Bot {
     return 'desconhecido';
   }
 
-  requestFollow(username, wantLike) {
+  requestLike(username) {
     return new Promise((resolve) => {
       try {
-        chrome.runtime.sendMessage({ type: 'FOLLOW_REQUEST', username, wantLike }, (resp) => {
-          if (chrome.runtime.lastError) {
-            resolve({ result: 'ERROR' });
-          } else {
-            resolve(resp || { result: 'ERROR' });
-          }
+        chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
+          resolve(resp && resp.result);
         });
       } catch (e) {
-        resolve({ result: 'ERROR' });
+        resolve('LIKE_SKIP');
       }
     });
   }
 
   async seguirProximoUsuario() {
-    if (!this.rodando || !this.followGateOpen) return;
-    const jobId = ++this.currentJobId;
-    if (this.nextActionTimer) { clearTimeout(this.nextActionTimer); this.nextActionTimer = null; }
-    clearInterval(this.countdownInterval);
-    const ctx = getFollowersContext();
-    if (!ctx) {
-      this.atualizarOverlay('Abra o modal de seguidores ou vá para /followers/');
-      if (!this.dialogObserver) {
-        this.dialogObserver = new MutationObserver(() => {
-          const c = getFollowersContext();
-          if (c) {
-            try { this.dialogObserver.disconnect(); } catch {}
-            this.dialogObserver = null;
-            this.seguirProximoUsuario();
-          }
-        });
-        try { this.dialogObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
-      }
-      this.nextActionTimer = setTimeout(() => { this.nextActionTimer = null; this.seguirProximoUsuario(); }, 1000);
+    if (!this.rodando) return;
+
+    const modal = document.querySelector('div[role="dialog"]');
+    if (!modal) {
+      this.atualizarOverlay('Abra o modal de seguidores');
+      setTimeout(() => this.seguirProximoUsuario(), 1000);
       return;
     }
-    if (this.dialogObserver) {
-      try { this.dialogObserver.disconnect(); } catch {}
-      this.dialogObserver = null;
-    }
-    const modalInterno = ctx.scroller;
 
-    let acted = false;
-    const buttons = Array.from(modalInterno.querySelectorAll('button, [role="button"]'));
-    for (const btn of buttons) {
-      const t = normalize(btn.innerText);
-      if (t === 'seguir de volta' || t === 'follow back') {
-        continue;
-      }
-      if (t === 'seguir' || t === 'follow') {
-        const username = await this.extractUsernameFromFollowButton(btn);
-        if (!username || username === 'desconhecido') {
-          this.addLog('desconhecido', '⚠️');
-          this.atualizarOverlay(`@desconhecido ⚠️ (${this.perfisSeguidos}/${this.limite})`);
-          console.log('[BOT] username desconhecido, pulando');
-          continue;
-        }
-        const user = username;
-        console.log(`[BOT] follow start @${user} job=${jobId}`);
-        this.followGateOpen = false;
-        const resp = await this.requestFollow(user, this.curtirFoto);
-        if (jobId !== this.currentJobId) {
-          console.log('[BOT] stale job, ignoring');
-          this.followGateOpen = true;
-          return;
-        }
-        const result = resp.result;
-        console.log(`[BOT] follow result=${result} job=${jobId}`);
-        if (result === 'ALREADY_FOLLOWS' || result === 'ALREADY_FOLLOWING') {
-          this.addLog(user, '⏭️ já segue');
-          this.atualizarOverlay(`@${user} ⏭️ já segue (${this.perfisSeguidos}/${this.limite})`);
-        } else if (result === 'FOLLOW_DONE') {
-          this.perfisSeguidos++;
-          if (resp.like === 'DONE') {
-            this.likesOk++;
-            this.addLog(user, '♥️');
-            this.atualizarOverlay(`@${user} seguido ♥️ (${this.perfisSeguidos}/${this.limite})`);
-          } else if (resp.like === 'SKIP') {
-            this.likesSkip++;
-            this.addLog(user, '⏭️');
-            this.atualizarOverlay(`@${user} seguido ⏭️ (${this.perfisSeguidos}/${this.limite})`);
-          } else {
-            this.addLog(user);
-            this.atualizarOverlay(`@${user} seguido (${this.perfisSeguidos}/${this.limite})`);
-          }
-        } else if (result === 'FOLLOW_REQUESTED') {
-          this.perfisSeguidos++;
-          this.addLog(user, '📨');
-          this.atualizarOverlay(`@${user} 📨 solicitado (${this.perfisSeguidos}/${this.limite})`);
-        } else if (result === 'NO_FOLLOW_BUTTON' || result === 'SKIP_NO_ACTION' || result === 'ERROR') {
-          this.addLog(user, '⚠️');
-          this.atualizarOverlay(`@${user} ⚠️ erro (${this.perfisSeguidos}/${this.limite})`);
-        } else {
-          this.addLog(user, '⏭️');
-          this.atualizarOverlay(`@${user} ⏭️ (${this.perfisSeguidos}/${this.limite})`);
-        }
-        this.followGateOpen = true;
-        if (modalInterno === document.scrollingElement || modalInterno === document.documentElement || modalInterno === document.body) {
-          window.scrollBy(0, 70);
-        } else {
-          modalInterno.scrollTop += 70;
-        }
-        acted = true;
-        break;
-      }
+    const modalInterno = this.encontrarModalInterno(modal);
+    if (!modalInterno) {
+      this.atualizarOverlay('Não encontrou a div interna scrollável');
+      setTimeout(() => this.seguirProximoUsuario(), 1000);
+      return;
     }
 
-    if (!acted) {
+    const btn = Array.from(modalInterno.querySelectorAll('button')).find((b) => {
+      const t = (b.innerText || '').trim().toLowerCase();
+      return t === 'seguir' || t === 'follow';
+    });
+
+    if (btn) {
+      const username = await this.extractUsernameFromFollowButton(btn);
+      btn.click();
+      this.perfisSeguidos++;
+      this.addLog(username);
+
+      if (this.curtirFoto) {
+        this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
+        const result = await this.requestLike(username);
+        if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
+        else { this.likesSkip++; this.addLog(username, '⏭️'); }
+      } else {
+        this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
+      }
+
+      modalInterno.scrollTop += 70;
+    } else {
       this.atualizarOverlay('Rolando modal...');
-      const useWindow = (modalInterno === document.scrollingElement || modalInterno === document.documentElement || modalInterno === document.body);
-      const prevScroll = useWindow ? window.scrollY : modalInterno.scrollTop;
-      if (useWindow) { window.scrollBy(0, 60); } else { modalInterno.scrollTop += 60; }
-      this.nextActionTimer = setTimeout(() => {
-        this.nextActionTimer = null;
-        const curr = useWindow ? window.scrollY : modalInterno.scrollTop;
-        if (curr === prevScroll) {
+      const prevScroll = modalInterno.scrollTop;
+      modalInterno.scrollTop += 60;
+      setTimeout(() => {
+        if (modalInterno.scrollTop === prevScroll) {
           this.atualizarOverlay(`Fim do modal ou todos os perfis carregados (${this.perfisSeguidos}/${this.limite})`);
           this.rodando = false;
           clearInterval(this.countdownInterval);
@@ -322,10 +226,6 @@ class Bot {
     this.minDelay = Math.min(min, max) * 1000;
     this.maxDelay = Math.max(min, max) * 1000;
     this.criarOverlays();
-    if (this.logOverlay) {
-      this.logOverlay.textContent = '';
-      this.logCounter = 0;
-    }
     this.seguirProximoUsuario();
   }
 
@@ -333,12 +233,6 @@ class Bot {
     this.rodando = false;
     this.atualizarOverlay('Automação parada');
     clearInterval(this.countdownInterval);
-    clearTimeout(this.nextActionTimer);
-    this.nextActionTimer = null;
-    if (this.dialogObserver) {
-      try { this.dialogObserver.disconnect(); } catch {}
-      this.dialogObserver = null;
-    }
   }
 }
 

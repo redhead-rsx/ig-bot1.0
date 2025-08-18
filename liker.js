@@ -1,5 +1,4 @@
 (async () => {
-  // Executado somente quando o perfil foi seguido com sucesso
   const DEBUG = true;
   const log = (...a) => { try { if (DEBUG) console.log('[LIKER]', ...a); } catch(_) {} };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -11,9 +10,7 @@
     }
     return null;
   };
-  const send = (result, reason) => {
-    try { chrome.runtime.sendMessage(reason ? { type: 'LIKE_RESULT', result, reason } : { type: 'LIKE_RESULT', result }); } catch(_) {}
-  };
+  const send = (type, reason) => { try { chrome.runtime.sendMessage(reason ? { type, reason } : { type }); } catch(_) {} };
 
   // Fecha popups/overlays que podem bloquear clique
   const closeOverlays = () => {
@@ -110,13 +107,13 @@
 
     if (document.visibilityState !== 'visible') {
       log('not visible → skip');
-      return send('SKIP', 'not_visible');
+      return send('LIKE_SKIP', 'not_visible');
     }
 
     const txt = (document.body.innerText || '').toLowerCase();
     if (txt.includes('esta conta é privada') || txt.includes('conta privada') || txt.includes('this account is private')) {
       log('private → skip');
-      return send('SKIP', 'private');
+      return send('LIKE_SKIP', 'private');
     }
 
     // 1) achar post e navegar (se estiver no perfil)
@@ -136,7 +133,7 @@
         }
       }
     }
-    if (!anchor) { log('no post link'); return send('SKIP', 'no_post'); }
+    if (!anchor) { log('no post link'); return send('LIKE_SKIP', 'no_post'); }
 
     if (!(/\/p\/|\/reel\//.test(location.pathname))) {
       const url = new URL(anchor.getAttribute('href'), location.origin).href;
@@ -152,16 +149,16 @@
     let btn = await waitFor(findLikeBtn, { timeout: 7000, interval: 150 });
     log('like btn?', !!btn, 'pressed:', btn?.getAttribute('aria-pressed') || null, 'label:', btn?.getAttribute('aria-label') || btn?.querySelector('svg')?.getAttribute('aria-label') || null);
 
-    if (isLiked(btn)) { log('already liked'); return send('DONE'); }
+    if (isLiked(btn)) { log('already liked'); return send('LIKE_DONE'); }
 
     if (btn) {
       await robustClick(btn);
-        if (await confirmLiked(btn)) { log('liked by button'); return send('DONE'); }
+      if (await confirmLiked(btn)) { log('liked by button'); return send('LIKE_DONE'); }
 
       const svg = btn.querySelector('svg');
       if (svg) {
         await robustClick(svg);
-        if (await confirmLiked(btn)) { log('liked by svg'); return send('DONE'); }
+        if (await confirmLiked(btn)) { log('liked by svg'); return send('LIKE_DONE'); }
       }
     }
 
@@ -171,7 +168,7 @@
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key:'l', bubbles:true }));
     await sleep(600);
     btn = findLikeBtn();
-    if (await confirmLiked(btn)) { log('liked by key L'); return send('DONE'); }
+    if (await confirmLiked(btn)) { log('liked by key L'); return send('LIKE_DONE'); }
 
     // 4) double-tap
     const media = document.querySelector('article img, article video');
@@ -182,14 +179,13 @@
       media.dispatchEvent(ev('click')); await sleep(80);
       media.dispatchEvent(ev('click')); await sleep(700);
       btn = findLikeBtn();
-      if (await confirmLiked(btn)) { log('liked by double tap'); return send('DONE'); }
+      if (await confirmLiked(btn)) { log('liked by double tap'); return send('LIKE_DONE'); }
     }
 
     log('state not changed → skip');
-    send('SKIP', 'state_not_changed');
+    send('LIKE_SKIP', 'state_not_changed');
   } catch (e) {
     log('error', e?.message);
-    send('ERROR', 'error');
+    send('LIKE_SKIP', 'error');
   }
 })();
-
