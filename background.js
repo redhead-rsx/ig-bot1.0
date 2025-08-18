@@ -11,24 +11,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const opts = msg.options || {};
     const initOn = (tabId) => {
       igTabId = tabId;
-      // handshake first
-      chrome.tabs.sendMessage(tabId, { type: 'PING' }, () => {
-        chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, (resp) => {
-          if (chrome.runtime.lastError || !resp?.ok) {
-            // inject scripts then retry
-            chrome.scripting.executeScript({ target: { tabId }, files: ['bot.js'], world: 'ISOLATED' }, () => {
-              chrome.scripting.executeScript({ target: { tabId }, files: ['contentscript.js'], world: 'ISOLATED' }, () => {
-                setTimeout(() => {
-                  chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, () => {
-                    sendResponse({ ok: !chrome.runtime.lastError });
-                  });
-                }, 150);
-              });
+      // PING para verificar se o CS está vivo
+      chrome.tabs.sendMessage(tabId, { type: 'PING' }, (pong) => {
+        if (chrome.runtime.lastError || !pong?.ok) {
+          // injeta scripts e tenta novamente
+          chrome.scripting.executeScript({ target: { tabId }, files: ['bot.js'], world: 'ISOLATED' }, () => {
+            chrome.scripting.executeScript({ target: { tabId }, files: ['contentscript.js'], world: 'ISOLATED' }, () => {
+              setTimeout(() => {
+                chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, () => {
+                  sendResponse({ ok: !chrome.runtime.lastError });
+                });
+              }, 150);
             });
-          } else {
-            sendResponse({ ok: true });
-          }
-        });
+          });
+        } else {
+          chrome.tabs.sendMessage(tabId, { type: 'BOT_INIT', options: opts }, () => {
+            sendResponse({ ok: !chrome.runtime.lastError });
+          });
+        }
       });
     };
 
@@ -92,21 +92,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       close();
     };
     const inject = (attempt = 1) => {
-      chrome.scripting.executeScript(
-        { target: { tabId }, func: (opts) => { window.__FOLLOW_OPTIONS = opts; }, args: [{ wantLike: !!msg.wantLike }] },
-        () => {
-          chrome.scripting.executeScript(
-            { target: { tabId }, files: ['follow.js'], world: 'MAIN' },
-            () => {
-              const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
-              if (err) {
-                if (/Frame .* was removed|No frame/i.test(err) && attempt < 4) return setTimeout(() => inject(attempt + 1), 350);
-                return finalize({ result: 'ERROR', reason: 'inject_error' });
+      chrome.tabs.update(tabId, { active: true }, () => {
+        chrome.scripting.executeScript(
+          { target: { tabId }, func: (opts) => { window.__FOLLOW_OPTIONS = opts; }, args: [{ wantLike: !!msg.wantLike }] },
+          () => {
+            chrome.scripting.executeScript(
+              { target: { tabId }, files: ['follow.js'], world: 'MAIN' },
+              () => {
+                const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
+                if (err) {
+                  if (/Frame .* was removed|No frame/i.test(err) && attempt < 4) return setTimeout(() => inject(attempt + 1), 350);
+                  return finalize({ result: 'ERROR', reason: 'inject_error' });
+                }
               }
-            }
-          );
-        }
-      );
+            );
+          }
+        );
+      });
     };
 
     // helper para injetar liker.js e aguardar LIKE_RESULT

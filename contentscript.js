@@ -6,7 +6,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
   if (msg.type === 'PING') {
     sendResponse({ ok: true });
-    return;
+    return true;
   }
   if (msg.type === 'BOT_INIT') {
     try { console.log('[BOOT][BOT]'); } catch (_) {}

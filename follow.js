@@ -122,7 +122,7 @@
       if (!(/\/p\/|\/reel\//.test(location.pathname))) {
         const url = new URL(anchor.getAttribute('href'), location.origin).href;
         location.assign(url);
-        await waitFor(() => (/\/p\/|\/reel\//.test(location.pathname)), { timeout: 10000, interval: 150 });
+        await waitFor(() => (/\/p\/|\/reel\//.test(location.pathname)), { timeout: 12000, interval: 150 });
         await waitFor(() => document.readyState === 'complete', { timeout: 12000, interval: 100 });
         await sleep(400);
         closeOverlays();
@@ -290,7 +290,7 @@
       if (t === 'seguindo' || t === 'following') return 'FOLLOW_DONE';
       if (t === 'solicitado' || t === 'requested') return 'FOLLOW_REQUESTED';
       return null;
-    }, { timeout: 9000, interval: 200 });
+    }, { timeout: 12000, interval: 200 });
 
     if (!state) {
       finalDecision = 'SKIP_NO_ACTION';
