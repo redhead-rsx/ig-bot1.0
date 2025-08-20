@@ -1,201 +1,135 @@
-(async () => {
-  let DEBUG = false;
-  try {
-    DEBUG = await new Promise(resolve => {
-      if (chrome?.storage?.local?.get) {
-        chrome.storage.local.get(['debug'], r => resolve(!!r.debug));
-      } else {
-        resolve(false);
-      }
-    });
-  } catch {}
-  const log = (...a) => { try { if (DEBUG) console.log('[LIKER]', ...a); } catch(_) {} };
-  try { chrome.runtime?.onMessage?.addListener(msg => { if (msg?.type === 'SET_DEBUG') DEBUG = !!msg.debug; }); } catch {}
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, { timeout = 15000, interval = 150 } = {}) => {
-    const t0 = Date.now();
-    while (Date.now() - t0 < timeout) {
-      try { const v = fn(); if (v) return v; } catch {}
-      await sleep(interval);
-    }
-    return null;
-  };
-  const send = (type, reason) => { try { chrome.runtime.sendMessage(reason ? { type, reason } : { type }); } catch(_) {} };
+let DEBUG = false;
+try {
+  chrome.storage?.local?.get(['debug'], r => { DEBUG = !!r?.debug; });
+} catch {}
+const log = (...a) => { try { if (DEBUG) console.log('[LIKER]', ...a); } catch (_) {} };
 
-  // Fecha popups/overlays que podem bloquear clique
-  const closeOverlays = () => {
-    const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-    const wanted = [
-      'agora não','agora nao','not now',
-      'ativar notificações','turn on notifications',
-      'salvar informações','save login info','lembrar','remember',
-      'aceitar','accept','permitir','allow','ok'
-    ];
-    let closed = 0;
-    for (const b of btns) {
-      const t = (b.innerText || '').trim().toLowerCase();
-      if (wanted.some(w => t.includes(w))) { try { b.click(); closed++; } catch {} }
-    }
-    if (closed) log('closed overlays:', closed);
-  };
-
-  // 3 sinais de "curtido"
-  const isLiked = (btn) => {
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function waitFor(fn, timeout = 8000, interval = 120) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
     try {
-      if (!btn) return false;
-      const pressed = btn.getAttribute('aria-pressed');
-      if (pressed === 'true') return true;
-      const svg = btn.querySelector('svg');
-      const label = (svg?.getAttribute('aria-label') || btn.getAttribute('aria-label') || '').toLowerCase();
-      if (label.includes('descurtir') || label.includes('unlike')) return true;
-      const path = svg?.querySelector('path');
-      const fill = path?.getAttribute('fill') || svg?.getAttribute('fill');
-      if (fill && fill !== 'none' && fill !== 'transparent') return true;
+      const v = fn();
+      if (v) return v;
     } catch {}
-    return false;
-  };
+    await sleep(interval);
+  }
+  return null;
+}
 
-  // tenta achar o botão via vários caminhos
-  const findLikeBtn = () => {
-    // 1) Qualquer elemento com aria-label (PT/EN) → sobe pro button
-    let el = document.querySelector('[aria-label*="Curtir" i], [aria-label*="Like" i], [aria-label*="Descurtir" i], [aria-label*="Unlike" i]');
-    if (el) return el.closest('button, [role="button"]') || (el.tagName === 'BUTTON' ? el : null);
-
-    // 2) Dentro de articles: qualquer svg com aria-label (cobre muitos casos)
-    const arts = Array.from(document.querySelectorAll('article'));
-    for (const art of arts) {
-      const svg = art.querySelector('button svg[aria-label], [role="button"] svg[aria-label]');
-      if (svg) return svg.closest('button, [role="button"]') || svg;
-    }
-
-    // 3) Inferir barra de ações a partir do “Compartilhar/Share”
-    const shareSvg = document.querySelector('svg[aria-label*="Compartilhar" i], svg[aria-label*="Share" i]');
-    const bar = shareSvg?.closest('section, div[role="group"], div[style*="display: flex"]') || shareSvg?.parentElement?.closest('section, div');
-    if (bar) {
-      // normalmente: [Curtir] [Comentar] [Compartilhar] [Salvar]
-      const btns = Array.from(bar.querySelectorAll('button, [role="button"]'));
-      // remove “Salvar/Save”
-      const filtered = btns.filter(b => !/salvar|save/i.test((b.getAttribute('aria-label') || b.querySelector('[aria-label]')?.getAttribute('aria-label') || '')));
-      if (filtered.length >= 1) return filtered[0];
-    }
-
-    // 4) Fallback global por svg
-    const svg = document.querySelector('svg[aria-label], [role="img"][aria-label]');
-    return svg ? (svg.closest('button, [role="button"]') || svg) : null;
-  };
-
-  const robustClick = async (el) => {
-    if (!el) return false;
-    try { el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch {}
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
-    const mouse = (type, extra={}) => el.dispatchEvent(new MouseEvent(type, { bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy, buttons:1, ...extra }));
-    try { el.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true, clientX:cx, clientY:cy, pointerId:1, pointerType:'mouse', isPrimary:true })); } catch {}
-    mouse('mousedown'); mouse('mouseup'); mouse('click'); el.click?.();
-    // e tenta tecla Enter/Space
-    el.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true }));
-    el.dispatchEvent(new KeyboardEvent('keydown', { key:' ', bubbles:true }));
-    await sleep(350);
-    return true;
-  };
-
-  const confirmLiked = async (btn) => {
-    if (isLiked(btn)) return true;
-    // espera algum sinal global no article
-    const ok = await waitFor(() =>
-      document.querySelector('article svg[aria-label*="Descurtir" i], article svg[aria-label*="Unlike" i]') ||
-      document.querySelector('article svg path[fill]:not([fill="none"])')
-      ? true : null,
-      { timeout: 1200, interval: 120 }
-    );
-    return !!ok || isLiked(btn);
-  };
-
+async function likeFirstMedia() {
   try {
-    await waitFor(() => document.readyState === 'complete', { timeout: 8000, interval: 100 });
-    closeOverlays();
-
-    if (document.visibilityState !== 'visible') {
-      log('not visible → skip');
-      return send('LIKE_SKIP', 'not_visible');
+    const profileRegex = /^https:\/\/www\.instagram\.com\/[^\/]+\/$/;
+    if (!profileRegex.test(location.href)) {
+      log('skip not_profile_page', location.href);
+      return chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'not_profile_page' });
     }
 
-    const txt = (document.body.innerText || '').toLowerCase();
-    if (txt.includes('esta conta é privada') || txt.includes('conta privada') || txt.includes('this account is private')) {
-      log('private → skip');
-      return send('LIKE_SKIP', 'private');
+    const gridReady = await waitFor(() => document.querySelector('main a[href*="/p/"], main a[href*="/reel/"]'), 12000, 200);
+    if (!gridReady) {
+      log('skip no_clickable_media');
+      return chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'no_clickable_media' });
     }
 
-    // 1) achar post e navegar (se estiver no perfil)
-    const main = await waitFor(() => document.querySelector('main'), { timeout: 6000 });
-    const findFirstPostLink = () => {
-      const q = (sel) => (main ? main.querySelector(sel) : document.querySelector(sel));
-      return q('article a[href*="/p/"]') || q('article a[href*="/reel/"]') || q('a[href*="/p/"]') || q('a[href*="/reel/"]');
+    const anchors = Array.from(document.querySelectorAll('main a[href*="/p/"], main a[href*="/reel/"]'));
+    let target = null;
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      if (/\/(p|reel)\//.test(href)) { target = a; break; }
+    }
+    if (!target) {
+      log('skip no_clickable_media valid');
+      return chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'no_clickable_media' });
+    }
+
+    let mediaType = /\/reel\//.test(target.getAttribute('href')) ? 'reel' : 'photo';
+    const openOnce = async () => {
+      try { target.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      await sleep(250 + Math.random() * 150);
+      try { target.click(); } catch {}
+      return await waitFor(() => {
+        if (document.querySelector('[role="dialog"]')) return 'modal';
+        if (/\/(p|reel)\//.test(location.pathname)) return 'page';
+        return null;
+      }, 8000, 200);
     };
-    let anchor = findFirstPostLink();
-    if (!anchor) {
-      const img = main && main.querySelector('article img');
-      if (img) {
-        let n = img;
-        while (n && n !== document.body) {
-          if (n.tagName === 'A' || n.getAttribute('role') === 'button') { anchor = n; break; }
-          n = n.parentElement;
-        }
-      }
-    }
-    if (!anchor) { log('no post link'); return send('LIKE_SKIP', 'no_post'); }
 
-    if (!(/\/p\/|\/reel\//.test(location.pathname))) {
-      const url = new URL(anchor.getAttribute('href'), location.origin).href;
-      log('navigating to post:', url);
-      location.assign(url);
-      await waitFor(() => (/\/p\/|\/reel\//.test(location.pathname)), { timeout: 10000, interval: 150 });
-      await waitFor(() => document.readyState === 'complete', { timeout: 6000, interval: 100 });
+    let opened = await openOnce();
+    if (!opened) {
       await sleep(400);
-      closeOverlays();
-    }
-
-    // 2) tentar curtir
-    let btn = await waitFor(findLikeBtn, { timeout: 7000, interval: 150 });
-    log('like btn?', !!btn, 'pressed:', btn?.getAttribute('aria-pressed') || null, 'label:', btn?.getAttribute('aria-label') || btn?.querySelector('svg')?.getAttribute('aria-label') || null);
-
-    if (isLiked(btn)) { log('already liked'); return send('LIKE_DONE'); }
-
-    if (btn) {
-      await robustClick(btn);
-      if (await confirmLiked(btn)) { log('liked by button'); return send('LIKE_DONE'); }
-
-      const svg = btn.querySelector('svg');
-      if (svg) {
-        await robustClick(svg);
-        if (await confirmLiked(btn)) { log('liked by svg'); return send('LIKE_DONE'); }
+      opened = await openOnce();
+      if (!opened) {
+        log('skip open_failed');
+        return chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'open_failed' });
       }
     }
-
-    // 3) tecla 'l'
-    const art = document.querySelector('article');
-    if (art) { art.focus?.(); art.click?.(); }
-    document.body.dispatchEvent(new KeyboardEvent('keydown', { key:'l', bubbles:true }));
-    await sleep(600);
-    btn = findLikeBtn();
-    if (await confirmLiked(btn)) { log('liked by key L'); return send('LIKE_DONE'); }
-
-    // 4) double-tap
-    const media = document.querySelector('article img, article video');
-    if (media) {
-      const r = media.getBoundingClientRect();
-      const cx = r.left + r.width/2, cy = r.top + r.height/2;
-      const ev = (type) => new MouseEvent(type, { bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy });
-      media.dispatchEvent(ev('click')); await sleep(80);
-      media.dispatchEvent(ev('click')); await sleep(700);
-      btn = findLikeBtn();
-      if (await confirmLiked(btn)) { log('liked by double tap'); return send('LIKE_DONE'); }
+    if (opened === 'page') {
+      mediaType = /\/reel\//.test(location.pathname) ? 'reel' : 'photo';
     }
 
-    log('state not changed → skip');
-    send('LIKE_SKIP', 'state_not_changed');
+    let usedSelector = '';
+    const findLikeBtn = () => {
+      let el = document.querySelector('button[aria-label*="Curtir" i], button[aria-label*="Like" i]');
+      if (el) { usedSelector = 'button[aria-label*="Curtir" i], button[aria-label*="Like" i]'; return el; }
+      el = document.querySelector('svg[aria-label*="Curtir" i], svg[aria-label*="Like" i]');
+      if (el) { usedSelector = 'svg[aria-label*="Curtir" i], svg[aria-label*="Like" i]'; return el.closest('button') || el; }
+      el = document.querySelector('[data-testid*="like" i]');
+      if (el) { usedSelector = '[data-testid*="like" i]'; return el.closest('button') || el; }
+      return null;
+    };
+
+    const likeBtn = await waitFor(findLikeBtn, 5000, 120);
+    if (!likeBtn) {
+      log('skip like_button_not_found');
+      return chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'like_button_not_found' });
+    }
+    log('like button selector:', usedSelector);
+
+    const label = () => (likeBtn.getAttribute('aria-label') || likeBtn.querySelector('svg')?.getAttribute('aria-label') || '').toLowerCase();
+    if (/descurtir|unlike/.test(label())) {
+      log('already liked');
+      if (opened === 'modal') {
+        const closeBtn = document.querySelector('button[aria-label*="Fechar" i], button[aria-label*="Close" i]');
+        if (closeBtn) closeBtn.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      } else {
+        history.back();
+        await waitFor(() => profileRegex.test(location.href), 5000, 200);
+      }
+      return chrome.runtime.sendMessage({ type: 'LIKE_DONE', mediaType, alreadyLiked: true });
+    }
+
+    const clickAndCheck = async () => {
+      try { likeBtn.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      try { likeBtn.click(); } catch {}
+      return await waitFor(() => /descurtir|unlike/.test(label()), 6000, 120);
+    };
+
+    let toggled = await clickAndCheck();
+    if (!toggled) {
+      await sleep(350 + Math.random() * 250);
+      try { likeBtn.click(); } catch {}
+      toggled = await waitFor(() => /descurtir|unlike/.test(label()), 6000, 120);
+    }
+    if (!toggled) {
+      log('skip state_not_changed');
+      return chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'state_not_changed' });
+    }
+
+    if (opened === 'modal') {
+      const closeBtn = document.querySelector('button[aria-label*="Fechar" i], button[aria-label*="Close" i]');
+      if (closeBtn) closeBtn.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    } else {
+      history.back();
+      await waitFor(() => profileRegex.test(location.href), 5000, 200);
+    }
+
+    chrome.runtime.sendMessage({ type: 'LIKE_DONE', mediaType });
   } catch (e) {
     log('error', e?.message);
-    send('LIKE_SKIP', 'error');
+    try { chrome.runtime.sendMessage({ type: 'LIKE_SKIP', reason: 'error' }); } catch {}
   }
-})();
+}
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === 'LIKE_REQUEST') likeFirstMedia();
+});
