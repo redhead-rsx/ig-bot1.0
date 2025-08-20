@@ -28,6 +28,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (/Frame .* was removed|No frame/i.test(err) && attempt < 4) return setTimeout(() => inject(attempt + 1), 350);
           return finalize('LIKE_SKIP');
         }
+        try { chrome.tabs.sendMessage(tabId, { type: 'LIKE_REQUEST' }); } catch {}
       }
     );
   };
@@ -35,7 +36,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!snd?.tab || snd.tab.id !== tabId) return;
     if (res?.type === 'LIKE_DONE') return finalize('LIKE_DONE');
     if (res?.type === 'LIKE_SKIP') {
-      if (!secondTry && (res.reason === 'not_visible' || res.reason === 'no_post')) {
+      if (!secondTry && ['open_failed','like_button_not_found','state_not_changed'].includes(res.reason)) {
         secondTry = true;
         chrome.tabs.update(tabId, { active: true }, () => setTimeout(() => inject(1), 400));
       } else {
@@ -46,7 +47,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const onUpdated = (id, info) => { if (id === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(onUpdated); inject(1); } };
   const onRemoved = (id) => { if (id === tabId) finalize('LIKE_SKIP'); };
 
-  timer = setTimeout(() => finalize('LIKE_SKIP'), 20000); // timeout total
+  timer = setTimeout(() => finalize('LIKE_SKIP'), 45000); // timeout total
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     prevTabId = tabs?.[0]?.id ?? null;
