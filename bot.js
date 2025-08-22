@@ -189,6 +189,12 @@ class Bot {
 
   async seguirProximoUsuario() {
     if (!this.rodando) return;
+    const gate = await new Promise((r) => chrome.runtime.sendMessage({ type: 'CAN_RUN' }, r));
+    if (!gate?.ok) {
+      this.atualizarOverlay('Faça login no popup');
+      this.rodando = false;
+      return;
+    }
     const state = await getState();
     if (!state.running) { this.stop(); return; }
     if (state.pausedUntil > Date.now()) {
