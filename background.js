@@ -44,85 +44,149 @@ function isAuthorized(auth, lockUntil, now) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
-    const now = Date.now();
-    const data = await storeGet(["auth", "auth_failCount", "auth_lockUntil"]);
-    const auth = data.auth || { state: "NONE" };
-    const failCount = data.auth_failCount || 0;
-    const lockUntil = data.auth_lockUntil || 0;
-
-    if (msg.type === "AUTH_LOGIN") {
-      if (lockUntil && lockUntil > now) {
-        sendResponse({ ok: false, error: "LOCKED_UNTIL", lockUntil });
-        return;
+    try {
+      async function getAuthSafe() {
+        const {
+          auth,
+          auth_failCount = 0,
+          auth_lockUntil = 0,
+        } = await chrome.storage.local.get([
+          "auth",
+          "auth_failCount",
+          "auth_lockUntil",
+        ]);
+        const safeAuth =
+          auth && typeof auth === "object" ? auth : { state: "NONE" };
+        return { auth: safeAuth, auth_failCount, auth_lockUntil };
       }
-      const ok = await checkUserPass(msg.user, msg.pass);
-      if (ok) {
-        const newAuth = {
-          state: "AUTH",
-          user: msg.user,
-          since: now,
-          exp: now + AUTH.DEFAULT_EXP_MS,
-        };
-        await storeSet({ auth: newAuth, auth_failCount: 0, auth_lockUntil: 0 });
-        sendResponse({ ok: true, exp: newAuth.exp });
-      } else {
-        let fc = failCount + 1;
-        let update = { auth_failCount: fc };
-        let resp = { ok: false, error: "INVALID", failCount: fc };
-        if (fc >= AUTH.MAX_FAILS) {
-          const lu = now + AUTH.LOCK_MS;
-          update = { auth_failCount: 0, auth_lockUntil: lu };
-          resp.lockUntil = lu;
+
+      const now = Date.now();
+
+      if (msg?.type === "AUTH_STATUS") {
+        const { auth, auth_failCount, auth_lockUntil } = await getAuthSafe();
+        return sendResponse({
+          ok: true,
+          auth,
+          auth_failCount,
+          auth_lockUntil,
+          now,
+        });
+      }
+
+      if (msg?.type === "AUTH_LOGIN") {
+        const { user = "", pass = "" } = msg;
+        const { auth_lockUntil = 0 } = await chrome.storage.local.get(
+          "auth_lockUntil"
+        );
+        if (auth_lockUntil > now) {
+          return sendResponse({
+            ok: false,
+            error: "LOCKED_UNTIL",
+            lockUntil: auth_lockUntil,
+          });
         }
-        await storeSet(update);
-        sendResponse(resp);
+        const ok = await checkUserPass(user, pass);
+        if (ok) {
+          const exp = now + (AUTH.DEFAULT_EXP_MS || 7 * 24 * 60 * 60 * 1000);
+          await chrome.storage.local.set({
+            auth: { state: "AUTH", user, since: now, exp },
+            auth_failCount: 0,
+            auth_lockUntil: 0,
+          });
+          return sendResponse({ ok: true, exp });
+        } else {
+          const { auth_failCount = 0 } = await chrome.storage.local.get(
+            "auth_failCount"
+          );
+          const next = auth_failCount + 1;
+          if (next >= (AUTH.MAX_FAILS || 5)) {
+            const lockUntil = now + (AUTH.LOCK_MS || 10 * 60 * 1000);
+            await chrome.storage.local.set({
+              auth_failCount: 0,
+              auth_lockUntil: lockUntil,
+            });
+            return sendResponse({
+              ok: false,
+              error: "INVALID",
+              failCount: 0,
+              lockUntil,
+            });
+          } else {
+            await chrome.storage.local.set({ auth_failCount: next });
+            return sendResponse({
+              ok: false,
+              error: "INVALID",
+              failCount: next,
+            });
+          }
+        }
       }
-      return;
-    }
 
-    if (msg.type === "AUTH_LOGOUT") {
-      await storeSet({
-        auth: { state: "NONE" },
-        auth_failCount: 0,
-        auth_lockUntil: 0,
+      if (msg?.type === "AUTH_LOGOUT") {
+        await chrome.storage.local.set({
+          auth: { state: "NONE" },
+          auth_failCount: 0,
+          auth_lockUntil: 0,
+        });
+        return sendResponse({ ok: true });
+      }
+
+      if (msg?.type === "CAN_RUN") {
+          const { auth, auth_lockUntil } = await (async () => {
+            const { auth, auth_lockUntil } = await chrome.storage.local.get([
+              "auth",
+              "auth_lockUntil",
+            ]);
+            return {
+              auth:
+                auth && typeof auth === "object" ? auth : { state: "NONE" },
+              auth_lockUntil: auth_lockUntil || 0,
+            };
+          })();
+          const authorized =
+            (!auth_lockUntil || auth_lockUntil <= now) &&
+            auth?.state === "AUTH" &&
+            (!auth?.exp || auth.exp > now);
+          return sendResponse({ ok: !!authorized });
+      }
+
+      if (
+        ["START", "FOLLOW_ONE", "STOP", "AF_SET_ALARM", "AF_CLEAR_ALARM"].includes(
+          msg?.type
+        )
+      ) {
+        const { auth, auth_lockUntil = 0 } = await chrome.storage.local.get([
+          "auth",
+          "auth_lockUntil",
+        ]);
+        const authorized =
+          (!auth_lockUntil || auth_lockUntil <= now) &&
+          auth?.state === "AUTH" &&
+          (!auth?.exp || auth.exp > now);
+        if (!authorized)
+          return sendResponse({ ok: false, error: "UNAUTHORIZED" });
+
+        if (msg.type === "AF_SET_ALARM") {
+          chrome.alarms.create("autoFollowResume", { when: msg.pausedUntil });
+          return sendResponse({ ok: true });
+        }
+
+        if (msg.type === "AF_CLEAR_ALARM") {
+          chrome.alarms.clear("autoFollowResume");
+          return sendResponse({ ok: true });
+        }
+
+        return sendResponse({ ok: true });
+      }
+
+      return sendResponse({ ok: false, error: "UNKNOWN_MSG" });
+    } catch (e) {
+      console.error("[BG] onMessage error:", e);
+      return sendResponse({
+        ok: false,
+        error: "EXCEPTION",
+        detail: String((e && e.message) || e),
       });
-      sendResponse({ ok: true });
-      return;
-    }
-
-    if (msg.type === "AUTH_STATUS") {
-      sendResponse({
-        ok: true,
-        auth,
-        auth_failCount: failCount,
-        auth_lockUntil: lockUntil,
-        now,
-      });
-      return;
-    }
-
-    if (msg.type === "CAN_RUN") {
-      const authorized = isAuthorized(auth, lockUntil, now);
-      sendResponse({ ok: authorized });
-      return;
-    }
-
-    // Gate remaining operations
-    if (!isAuthorized(auth, lockUntil, now)) {
-      sendResponse({ ok: false, error: "UNAUTHORIZED" });
-      return;
-    }
-
-    if (msg.type === "AF_SET_ALARM") {
-      chrome.alarms.create("autoFollowResume", { when: msg.pausedUntil });
-      sendResponse({ ok: true });
-      return;
-    }
-
-    if (msg.type === "AF_CLEAR_ALARM") {
-      chrome.alarms.clear("autoFollowResume");
-      sendResponse({ ok: true });
-      return;
     }
   })();
   return true;
