@@ -1,20 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Instagram Auto Follow RSX V1",
-  "version": "1.1",
+  "version": "1.0.0-backup",
   "description": "Segue automaticamente perfis no modal de seguidores com limite e delay aleatório.",
   "permissions": [
     "activeTab",
-    "scripting",
     "storage",
     "tabs"
   ],
   "host_permissions": [
     "https://www.instagram.com/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "action": {
     "default_popup": "popup.html"
   },

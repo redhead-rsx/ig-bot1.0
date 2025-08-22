@@ -6,11 +6,8 @@ class Bot {
     this.overlay = null; // overlay inferior direito
     this.logOverlay = null; // overlay superior esquerdo
     this.countdownInterval = null;
-    this.curtirFoto = true;
     this.minDelay = 120000;
     this.maxDelay = 180000;
-    this.likesOk = 0;
-    this.likesSkip = 0;
   }
 
   criarOverlays() {
@@ -65,8 +62,7 @@ class Bot {
 
   atualizarOverlay(texto) {
     if (!this.overlay) return;
-    const extra = `\nLikes: ${this.likesOk} ok / ${this.likesSkip} skip`;
-    this.overlay.textContent = `${texto}${extra}`;
+    this.overlay.textContent = texto;
   }
 
   addLog(username, badge = '') {
@@ -136,18 +132,6 @@ class Bot {
     return 'desconhecido';
   }
 
-  requestLike(username) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({ type: 'LIKE_REQUEST', username }, (resp) => {
-          resolve(resp && resp.result);
-        });
-      } catch (e) {
-        resolve('LIKE_SKIP');
-      }
-    });
-  }
-
   async seguirProximoUsuario() {
     if (!this.rodando) return;
 
@@ -175,16 +159,7 @@ class Bot {
       btn.click();
       this.perfisSeguidos++;
       this.addLog(username);
-
-      if (this.curtirFoto) {
-        this.atualizarOverlay(`Curtindo primeira foto de @${username}... (${this.perfisSeguidos}/${this.limite})`);
-        const result = await this.requestLike(username);
-        if (result === 'LIKE_DONE') { this.likesOk++; this.addLog(username, '♥️'); }
-        else { this.likesSkip++; this.addLog(username, '⏭️'); }
-      } else {
-        this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
-      }
-
+      this.atualizarOverlay(`Seguido @${username} (${this.perfisSeguidos}/${this.limite})`);
       modalInterno.scrollTop += 70;
     } else {
       this.atualizarOverlay('Rolando modal...');
@@ -213,14 +188,11 @@ class Bot {
     this.startCountdown(delaySegundos);
   }
 
-  start(limiteParam, curtir, minDelayParam, maxDelayParam) {
+  start(limiteParam, minDelayParam, maxDelayParam) {
     if (this.rodando) return;
     this.rodando = true;
     this.perfisSeguidos = 0;
-    this.likesOk = 0;
-    this.likesSkip = 0;
     this.limite = limiteParam || 10;
-    this.curtirFoto = curtir !== undefined ? curtir : true;
     const min = Number(minDelayParam || 120);
     const max = Number(maxDelayParam || 180);
     this.minDelay = Math.min(min, max) * 1000;
@@ -242,7 +214,7 @@ window.addEventListener('keydown', (ev) => {
   if (ev.key === 'x') bot.stop();
   if (ev.key === 'p') {
     if (bot.rodando) { bot.stop(); }
-    else { bot.start(bot.limite, bot.curtirFoto, bot.minDelay/1000, bot.maxDelay/1000); }
+    else { bot.start(bot.limite, bot.minDelay/1000, bot.maxDelay/1000); }
   }
 });
 window.__igBot = bot;
