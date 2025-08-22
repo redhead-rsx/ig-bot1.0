@@ -99,8 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
       res = await chrome.runtime.sendMessage({ type: 'AUTH_STATUS' });
     } catch (e) {
       console.warn('[POPUP] AUTH_STATUS failed:', e);
-      return showLogin('Carregando autenticação...');
     }
+    if (!res) return showLogin('Carregando autenticação...');
     const now = (res && res.now) || Date.now();
     const lockUntil = res?.auth_lockUntil || 0;
     const authed = !!(
@@ -123,8 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnLogout = document.getElementById('logoutBtn');
 
   btnLogin?.addEventListener('click', async () => {
-    const user = inpUser?.value || '';
-    const pass = inpPass?.value || '';
+    const user = (inpUser?.value || '').trim();
+    const pass = (inpPass?.value || '').trim();
     let r;
     try {
       r = await chrome.runtime.sendMessage({ type: 'AUTH_LOGIN', user, pass });
@@ -135,6 +135,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (r?.error === 'LOCKED_UNTIL') {
       const untilStr = new Date(r.lockUntil).toLocaleTimeString();
       return showLogin(`Bloqueado até ${untilStr}.`);
+    }
+    if (r?.error === 'USER_NOT_FOUND') {
+      return showLogin('Usuário não encontrado.');
+    }
+    if (r?.error === 'INVALID_PASSWORD') {
+      return showLogin('Senha incorreta.');
     }
     return showLogin('Usuário ou senha inválidos.');
   });

@@ -16,6 +16,10 @@ const AUTH = {
   ],
 };
 
+function normalize(s) {
+  return String(s || "").trim();
+}
+
 async function sha256Hex(s) {
   const e = new TextEncoder();
   const b = await crypto.subtle.digest("SHA-256", e.encode(s));
@@ -25,10 +29,20 @@ async function sha256Hex(s) {
 }
 
 async function checkUserPass(user, pass) {
-  const combo = AUTH.PEPPER + AUTH.SALT + user + ":" + pass;
-  const h = await sha256Hex(combo);
-  const found = AUTH.USERS.find((u) => u.username === user);
-  return !!(found && h === found.hash);
+  const u = normalize(user);
+  const p = normalize(pass);
+  const combo = AUTH.PEPPER + AUTH.SALT + u + ":" + p;
+  const calc = await sha256Hex(combo);
+  const found = AUTH.USERS.find((usr) => usr.username === u);
+  const { DEBUG_AUTH } = await storeGet("DEBUG_AUTH");
+  if (DEBUG_AUTH === true) {
+    console.log({
+      user: u,
+      calc: calc.slice(0, 12),
+      expected: found ? found.hash.slice(0, 12) : null,
+    });
+  }
+  return { ok: !!(found && calc === found.hash), found: !!found };
 }
 
 const storeGet = (keys) => new Promise((r) => chrome.storage.local.get(keys, r));
@@ -74,10 +88,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === "AUTH_LOGIN") {
-        const { user = "", pass = "" } = msg;
-        const { auth_lockUntil = 0 } = await chrome.storage.local.get(
-          "auth_lockUntil"
-        );
+        const user = normalize(msg.user);
+        const pass = normalize(msg.pass);
+        const { auth_lockUntil = 0 } = await storeGet("auth_lockUntil");
         if (auth_lockUntil > now) {
           return sendResponse({
             ok: false,
@@ -85,37 +98,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             lockUntil: auth_lockUntil,
           });
         }
-        const ok = await checkUserPass(user, pass);
+        const { ok, found } = await checkUserPass(user, pass);
         if (ok) {
           const exp = now + (AUTH.DEFAULT_EXP_MS || 7 * 24 * 60 * 60 * 1000);
-          await chrome.storage.local.set({
+          await storeSet({
             auth: { state: "AUTH", user, since: now, exp },
             auth_failCount: 0,
             auth_lockUntil: 0,
           });
           return sendResponse({ ok: true, exp });
         } else {
-          const { auth_failCount = 0 } = await chrome.storage.local.get(
-            "auth_failCount"
-          );
+          const { auth_failCount = 0 } = await storeGet("auth_failCount");
           const next = auth_failCount + 1;
           if (next >= (AUTH.MAX_FAILS || 5)) {
             const lockUntil = now + (AUTH.LOCK_MS || 10 * 60 * 1000);
-            await chrome.storage.local.set({
+            await storeSet({
               auth_failCount: 0,
               auth_lockUntil: lockUntil,
             });
             return sendResponse({
               ok: false,
-              error: "INVALID",
+              error: found ? "INVALID_PASSWORD" : "USER_NOT_FOUND",
               failCount: 0,
               lockUntil,
             });
           } else {
-            await chrome.storage.local.set({ auth_failCount: next });
+            await storeSet({ auth_failCount: next });
             return sendResponse({
               ok: false,
-              error: "INVALID",
+              error: found ? "INVALID_PASSWORD" : "USER_NOT_FOUND",
               failCount: next,
             });
           }
