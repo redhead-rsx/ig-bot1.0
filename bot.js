@@ -29,6 +29,7 @@ async function detectRateLimitOrFail(btn) {
     'try again later',
     'tente novamente mais tarde',
     'ação bloqueada',
+    'limitamos a frequência',
   ];
   const timeout = 6000;
   const interval = 200;
@@ -37,19 +38,25 @@ async function detectRateLimitOrFail(btn) {
 
   function hasFailToast() {
     const els = Array.from(document.querySelectorAll('div'));
-    return els.some((el) => {
+    for (const el of els) {
       const txt = (el.innerText || '').toLowerCase();
-      return failTexts.some((f) => txt.includes(f));
-    });
+      for (const f of failTexts) {
+        if (txt.includes(f)) return f;
+      }
+    }
+    return null;
   }
 
   while (Date.now() - start < timeout) {
-    if (hasFailToast()) return { ok: false, reason: 'toast' };
+    const fail = hasFailToast();
+    if (fail) return { ok: false, reason: 'toast', text: fail };
     const txt = (btn.innerText || '').toLowerCase();
     if (txt.includes('seguindo') || txt.includes('following')) return { ok: true };
     await new Promise((r) => setTimeout(r, interval));
   }
   const endTxt = (btn.innerText || '').toLowerCase();
+  const fail = hasFailToast();
+  if (fail) return { ok: false, reason: 'toast', text: fail };
   if (endTxt.includes('seguindo') || endTxt.includes('following')) return { ok: true };
   if (endTxt === startText) return { ok: false, reason: 'nochange' };
   return { ok: false, reason: 'timeout' };
@@ -241,34 +248,17 @@ class Bot {
         this.addLog(username, '✖');
         const st = await getState();
         const newFails = st.consecutiveFails + 1;
-        let updates = { consecutiveFails: newFails, totalFails: (st.totalFails || 0) + 1 };
-        if (newFails >= 3) {
-          if (st.stage === 0) {
-            const pauseMs = 20 * 60 * 1000;
-            const pausedUntil = Date.now() + pauseMs;
-            updates = { consecutiveFails: 0, pausedUntil, stage: st.stage + 1, totalFails: updates.totalFails };
-            this.atualizarOverlay(`Limite detectado. Pausado por 20 min (retoma às ${new Date(pausedUntil).toLocaleTimeString()})`);
-            chrome.runtime.sendMessage({ type: 'AF_SET_ALARM', pausedUntil });
-            clearInterval(this.countdownInterval);
-            await setState(updates);
-            return;
-          } else if (st.stage === 1) {
-            const pauseMs = 30 * 60 * 1000;
-            const pausedUntil = Date.now() + pauseMs;
-            updates = { consecutiveFails: 0, pausedUntil, stage: st.stage + 1, totalFails: updates.totalFails };
-            this.atualizarOverlay(`Limite detectado. Pausado por 30 min (retoma às ${new Date(pausedUntil).toLocaleTimeString()})`);
-            chrome.runtime.sendMessage({ type: 'AF_SET_ALARM', pausedUntil });
-            clearInterval(this.countdownInterval);
-            await setState(updates);
-            return;
-          } else {
-            await setState({ running: false, pausedUntil: 0, consecutiveFails: 0, stage: st.stage, totalFails: updates.totalFails });
-            chrome.runtime.sendMessage({ type: 'AF_CLEAR_ALARM' });
-            this.rodando = false;
-            clearInterval(this.countdownInterval);
-            this.atualizarOverlay('Finalizado por limite do Instagram.');
-            return;
-          }
+        let updates = { consecutiveFails: newFails };
+        const failPopup = result.text && result.text.includes('limitamos a frequência');
+        if (newFails >= 5 || failPopup) {
+          const pauseMs = 20 * 60 * 1000;
+          const pausedUntil = Date.now() + pauseMs;
+          updates = { consecutiveFails: 0, pausedUntil };
+          this.atualizarOverlay(`Limite detectado. Pausado por 20 min (retoma às ${new Date(pausedUntil).toLocaleTimeString()})`);
+          chrome.runtime.sendMessage({ type: 'AF_SET_ALARM', pausedUntil });
+          clearInterval(this.countdownInterval);
+          await setState(updates);
+          return;
         }
         await setState(updates);
       }
